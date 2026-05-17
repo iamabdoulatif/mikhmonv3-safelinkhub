@@ -18,6 +18,7 @@
 
 // hide all error
 error_reporting(0);
+include_once(__DIR__ . '/../include/mikhmon_compat.php');
 
 if (!isset($_SESSION["mikhmon"])) {
   header("Location:../admin.php?id=login");
@@ -57,15 +58,15 @@ if (!isset($_SESSION["mikhmon"])) {
   $ucomment = $userdetails['comment'];
   
 
-  if (substr(formatBytes2($udatalimit, 2), -2) == "MB") {
+  $MG = "MB";
+  if ($udatalimit == "" || $udatalimit == "0") {
+    $udatalimit = "";
+  } elseif (substr(formatBytes2((float)$udatalimit, 2), -2) == "MB") {
     $udatalimit = $udatalimit / 1048576;
     $MG = "MB";
-  } elseif (substr(formatBytes2($udatalimit, 2), -2) == "GB") {
+  } elseif (substr(formatBytes2((float)$udatalimit, 2), -2) == "GB") {
     $udatalimit = $udatalimit / 1073741824;
     $MG = "GB";
-  } elseif ($udatalimit == "") {
-    $udatalimit = "";
-    $MG = "MB";
   }
 
   if ($uname == $upass) {
