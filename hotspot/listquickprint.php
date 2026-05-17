@@ -18,6 +18,7 @@
 session_start();
 // hide all error
 error_reporting(0);
+include_once(__DIR__ . '/../include/mikhmon_compat.php');
 
 ini_set('max_execution_time', 300);
 

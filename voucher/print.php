@@ -18,6 +18,7 @@
 session_start();
 
 error_reporting(0);
+include_once(__DIR__ . '/../include/mikhmon_compat.php');
 
 ob_start("ob_gzhandler");
 

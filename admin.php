@@ -157,6 +157,7 @@ include('./include/sellers_config.php');
 include('./include/managers_config.php');
 include_once('./include/auth.php');
 include_once('./include/csrf.php');
+include_once('./include/mikhmon_compat.php');
 
 // Extraire les credentials admin pour la page sessions (non disponibles hors bloc login)
 $useradm = '';

@@ -18,6 +18,7 @@
 
 // hide all error
 error_reporting(0);
+include_once(__DIR__ . '/../include/mikhmon_compat.php');
 if (!isset($_SESSION["mikhmon"])) {
   header("Location:../admin.php?id=login");
 } else {
