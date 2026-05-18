@@ -39,4 +39,5 @@ jobs:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
           BUILD_STAMP: ${{ github.run_number }}-${{ github.sha }}
           BUILD_VERSION: github-${{ github.run_number }}
+          MANIFEST_TAGS: latest v1
         run: bash tools/ci-build-push-flattened.sh

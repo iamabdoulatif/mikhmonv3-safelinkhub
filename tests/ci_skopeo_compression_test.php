@@ -10,6 +10,11 @@ $checks = array(
     '--dest-compress-format gzip',
     '--dest-compress-level 9',
     '--dest-force-compress-format',
+    'MANIFEST_TAGS="${MANIFEST_TAGS:-latest v1}"',
+    'docker buildx imagetools create',
+    '"${IMAGE_NAME}:armv7"',
+    '"${IMAGE_NAME}:arm64"',
+    'publish_manifest_tags',
 );
 
 foreach ($checks as $needle) {

@@ -5,6 +5,7 @@ IMAGE_NAME="${IMAGE_NAME:-latif225/mikhmonv3-safelinkhub}"
 DOCKERFILE="${DOCKERFILE:-Dockerfile.mikrotik}"
 BUILD_STAMP="${BUILD_STAMP:-$(date -u +%Y%m%d%H%M%S)}"
 BUILD_VERSION="${BUILD_VERSION:-v3.0.${BUILD_STAMP}}"
+MANIFEST_TAGS="${MANIFEST_TAGS:-latest v1}"
 
 if [[ -z "${DOCKERHUB_USERNAME:-}" || -z "${DOCKERHUB_TOKEN:-}" ]]; then
   echo "DOCKERHUB_USERNAME and DOCKERHUB_TOKEN are required." >&2
@@ -76,6 +77,20 @@ push_flat_image() {
     "docker://${IMAGE_NAME}:${dest_tag}"
 }
 
+publish_manifest_tags() {
+  local create_args=()
+  local tag
+
+  for tag in $MANIFEST_TAGS; do
+    create_args+=("-t" "${IMAGE_NAME}:${tag}")
+  done
+
+  docker buildx imagetools create \
+    "${create_args[@]}" \
+    "${IMAGE_NAME}:armv7" \
+    "${IMAGE_NAME}:arm64"
+}
+
 docker_login
 
 build_flat_image "linux/arm/v7" "mikhmon-build:armv7" "mikhmon-flat:armv7" "mikhmon_flat_armv7_${BUILD_STAMP}"
@@ -85,4 +100,6 @@ push_flat_image "mikhmon-flat:armv7" "arm32" "linux/arm/v7"
 build_flat_image "linux/arm64" "mikhmon-build:arm64" "mikhmon-flat:arm64" "mikhmon_flat_arm64_${BUILD_STAMP}"
 push_flat_image "mikhmon-flat:arm64" "arm64" "linux/arm64"
 
-echo "Pushed flattened compressed images to ${IMAGE_NAME}: arm32, armv7, arm64"
+publish_manifest_tags
+
+echo "Pushed flattened compressed images to ${IMAGE_NAME}: arm32, armv7, arm64; manifests: ${MANIFEST_TAGS}"

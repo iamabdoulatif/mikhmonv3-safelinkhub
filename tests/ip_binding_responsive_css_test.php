@@ -14,6 +14,10 @@ $checks = array(
     'centered mobile text' => 'text-align: center;',
     'centered mobile table headers' => '.ipbind-table-wrap th',
     'centered mobile table cells' => '.ipbind-table-wrap td',
+    'centered panel margin' => 'margin: 12px auto',
+    'centered navbar group' => '#navbar .navbar-right',
+    'centered login tabs' => 'justify-content: center;',
+    'polished ip binding radius' => 'border-radius: 8px;',
 );
 
 foreach ($checks as $label => $needle) {
