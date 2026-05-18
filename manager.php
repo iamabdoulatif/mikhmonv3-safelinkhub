@@ -706,7 +706,7 @@ $managerOverviewUrl = './manager.php?action=overview&idbl=' . strtolower(date("M
     <div class="card-body portal-auth-body">
       <div class="portal-auth-logo">
         <img src="img/favicon.png" alt="MIKHMON Logo">
-        <span class="portal-auth-logo-title">MIKHMON <small class="login-logo-subtitle">BY Safelink Africa</small></span>
+        <span class="portal-auth-logo-title">MIKHMON <small class="login-logo-subtitle">BY SafeLink Africa</small></span>
         <div class="login-logo-contact">+2250709100552</div>
         <span class="mgr-badge"><i class="fa fa-briefcase"></i> <?= isset($_manager) ? $_manager : 'Manager' ?></span>
       </div>

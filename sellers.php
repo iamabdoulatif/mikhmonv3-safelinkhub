@@ -664,7 +664,7 @@ if ($seller_logged_in && $action === 'generate') {
     <div class="card-body portal-auth-body">
       <div class="portal-auth-logo">
         <img src="img/favicon.png" alt="MIKHMON Logo"><br>
-        <span class="portal-auth-logo-title">MIKHMON <small class="login-logo-subtitle">BY Safelink Africa</small></span>
+        <span class="portal-auth-logo-title">MIKHMON <small class="login-logo-subtitle">BY SafeLink Africa</small></span>
         <div class="login-logo-contact">+2250709100552</div>
       </div>
       <form autocomplete="off" action="" method="post" class="portal-auth-form">

@@ -32,7 +32,7 @@ $loginHotspotName = isset($hotspotname) && $hotspotname !== '' ? ' ' . $hotspotn
         <div class="card-body login-card-body">
           <div class="login-logo">
             <img src="img/favicon.png" alt="MIKHMON Logo">
-            <span>MIKHMON <small class="login-logo-subtitle">BY Safelink Africa</small></span>
+            <span>MIKHMON <small class="login-logo-subtitle">BY SafeLink Africa</small></span>
             <div class="login-logo-contact">+2250709100552</div>
           </div>
 
