@@ -34,11 +34,22 @@ Les captures ci-dessous sont recadrees pour rester lisibles directement dans Doc
 latif225/mikhmonv3-safelinkhub:latest
 latif225/mikhmonv3-safelinkhub:v1
 latif225/mikhmonv3-safelinkhub:arm32
+latif225/mikhmonv3-safelinkhub:arm
 latif225/mikhmonv3-safelinkhub:armv7
 latif225/mikhmonv3-safelinkhub:arm64
+latif225/mikhmonv3-safelinkhub:hap-ax-lite
+latif225/mikhmonv3-safelinkhub:hap-ax2
+latif225/mikhmonv3-safelinkhub:hap-ax3
+latif225/mikhmonv3-safelinkhub:rb3011
+latif225/mikhmonv3-safelinkhub:rb4011
 ```
 
-Utiliser `arm32` ou `armv7` pour MikroTik hAP ax lite et les routeurs RouterOS `architecture-name=arm`. Utiliser `arm64` pour les routeurs ARM64 comme hAP ax2.
+Mapping recommande:
+
+- `arm` / `arm32` / `armv7` -> RouterOS `architecture-name=arm` (hAP ax lite, RB3011, RB4011)
+- `arm64` -> RouterOS `architecture-name=arm64` (hAP ax2, hAP ax3)
+
+Les tags `hap-ax-lite`, `rb3011`, `rb4011`, `hap-ax2`, `hap-ax3` pointent vers l'image de l'architecture correspondante.
 
 ## Fonctions incluses
 

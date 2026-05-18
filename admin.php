@@ -280,6 +280,9 @@ if (!$hasAdminSession && !$hasEditorPortalAccess) {
 } elseif ($id == "sellers") {
   include_once('./include/menu.php');
   include_once('./settings/manage_sellers.php');
+} elseif ($id == "safelink") {
+  include_once('./include/menu.php');
+  include_once('./settings/safelink_integration.php');
 } elseif ($id == "fraud" && !empty($session)) {
   include_once('./include/menu.php');
   include_once('./settings/fraud.php');

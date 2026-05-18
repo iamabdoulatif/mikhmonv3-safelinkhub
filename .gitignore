@@ -7,6 +7,8 @@
 docker-output/
 backups/
 docs/
+!docs/
+!docs/SAFELINKHUB_MAMP_GUIDE.md
 logs/*.jsonl
 wireguard-configs/
 

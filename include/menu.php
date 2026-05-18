@@ -161,6 +161,9 @@ include ('./include/version.php');
   } elseif ($id == "editor") {
     $seditor = "active";
     $mpage = $_template_editor;
+  } elseif ($id == "safelink") {
+    $ssafelink = "active";
+    $mpage = "SafeLink API & Webhook";
   }
 }
 
@@ -233,6 +236,7 @@ if($idleto != "disable"){
   <a href="./admin.php?id=settings&router=new-<?= rand(1111,9999) ?>" class="menu <?= $snsettings ?>"><i class="fa fa-plus"></i> <?= $_add_router ?></a>
   <a href="<?= $sellerAdminUrl; ?>" class="menu <?= ($id=='sellers' && (!isset($_GET['tab']) || $_GET['tab']==='sellers') ?'active':'') ?>"><i class="fa fa-users nav-vendor-icon"></i> <?= isset($_sellers) ? $_sellers : 'Vendors' ?></a>
   <a href="<?= $managerAdminUrl; ?>" class="menu <?= ($id=='sellers' && isset($_GET['tab']) && $_GET['tab']==='managers' ?'active':'') ?>"><i class="fa fa-briefcase nav-manager-icon"></i> <?= isset($_managers) ? $_managers : 'Managers' ?></a>
+  <a href="./admin.php?id=safelink" class="menu <?= $ssafelink; ?>"><i class="fa fa-plug"></i> SafeLink API</a>
 <?php
   // Anti-fraude — badge si nouveaux incidents (uniquement avec une session active)
   if (!empty($_SESSION['mikhmon']) && !empty($session)) {
