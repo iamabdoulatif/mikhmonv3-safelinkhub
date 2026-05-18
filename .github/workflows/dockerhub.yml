@@ -48,5 +48,5 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: latif225/mikhmonv3-safelinkhub
-          short-description: Mikhmon v3 pour MikroTik Hotspot: vouchers, revenus, expiration et IP Binding temporise.
+          short-description: "Mikhmon v3 pour MikroTik Hotspot: vouchers, revenus, expiration et IP Binding temporise."
           readme-filepath: ./dockerhub/README.md

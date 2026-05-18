@@ -67,7 +67,7 @@ $requiredWorkflowSnippets = [
     'peter-evans/dockerhub-description@v4',
     'repository: latif225/mikhmonv3-safelinkhub',
     'readme-filepath: ./dockerhub/README.md',
-    'short-description: Mikhmon v3 pour MikroTik Hotspot',
+    'short-description: "Mikhmon v3 pour MikroTik Hotspot',
 ];
 
 foreach ($requiredWorkflowSnippets as $snippet) {
