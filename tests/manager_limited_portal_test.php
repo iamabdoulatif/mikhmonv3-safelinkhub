@@ -18,6 +18,7 @@ $required = array(
     'vendor sales overview' => 'Ventes des vendeurs',
     'overview route allowed' => "\$managerAllowedActions = array('dashboard', 'overview', 'accounting', 'tickets', 'logout')",
     'manager seller accounting right' => 'Compte vendeur',
+    'manager accounting route url' => "\$managerAccountingUrl = './manager.php?action=accounting&idbl='",
     'manager dashboard redirect for denied routes' => 'manager.php?action=dashboard',
 );
 

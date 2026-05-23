@@ -534,7 +534,7 @@ if ($accountingTo !== '') {
 }
 $managerHomeUrl = './manager.php?action=dashboard';
 $managerOverviewUrl = './manager.php?action=overview&idbl=' . strtolower(date("M")) . date("Y");
-$managerAccountingUrl = './manager.php?action=dashboard';
+$managerAccountingUrl = './manager.php?action=accounting&idbl=' . urlencode($accountingMonthKey);
 $accountingNoticeMsg = '';
 $accountingNoticeError = '';
 $accountingNoticeTargets = mikhmon_accounting_notification_targets($accountingSummary, $managerSellersData, $accountingSeller);
