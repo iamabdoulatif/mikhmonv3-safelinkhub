@@ -19,6 +19,7 @@ session_start();
 // hide all error
 error_reporting(0);
 include_once(__DIR__ . '/../include/mikhmon_compat.php');
+include_once(__DIR__ . '/../include/csrf.php');
 if (!isset($_SESSION["mikhmon"])) {
   header("Location:../admin.php?id=login");
 } else {
@@ -30,6 +31,7 @@ if (!isset($_SESSION["mikhmon"])) {
   $getpool = $API->comm("/ip/pool/print");
 
   if (isset($_POST['name'])) {
+    csrf_guard();
     $name = (preg_replace('/\s+/', '-',$_POST['name']));
     $sharedusers = ($_POST['sharedusers']);
     $ratelimit = ($_POST['ratelimit']);
@@ -129,6 +131,7 @@ if (!isset($_SESSION["mikhmon"])) {
   </div>
   <div class="card-body">
 <form autocomplete="off" method="post" action="">
+  <?= csrf_field() ?>
   <div>
     <a class="btn bg-warning" href="./?hotspot=user-profiles&session=<?= $session; ?>"> <i class="fa fa-close btn-mrg"></i> <?= $_close ?></a>
     <button type="submit" name="save" class="btn bg-primary btn-mrg" ><i class="fa fa-save btn-mrg"></i> <?= $_save ?></button>

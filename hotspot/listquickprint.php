@@ -19,6 +19,7 @@ session_start();
 // hide all error
 error_reporting(0);
 include_once(__DIR__ . '/../include/mikhmon_compat.php');
+include_once(__DIR__ . '/../include/csrf.php');
 
 ini_set('max_execution_time', 300);
 
@@ -94,6 +95,7 @@ $getquickprint = $API->comm("/system/script/print", array("?.id" => "$qpid"));
 	
 
 	if (isset($_POST['name'])) {
+			csrf_guard();
         $name = ($_POST['name']);
         $sname = "Quick_Print_".(preg_replace('/\s+/', '-', $_POST['name']));
 		$server = ($_POST['server']);
@@ -162,6 +164,7 @@ $getquickprint = $API->comm("/system/script/print", array("?.id" => "$qpid"));
 	</div>
 	<div class="card-body">
 <form autocomplete="off" method="post" action="">
+	<?= csrf_field() ?>
 	<div>
 <?php if(isset($qpid)){echo "
 		<a class='btn bg-warning' href='./?hotspot=list-quick-print&session=".$session."'> <i class='fa fa-close'></i> ".$_cancel."</a>";
@@ -328,13 +331,8 @@ for ($i = 0; $i < $TotalReg; $i++) {
   $getprice = explode("_",$quickprintsource[12])[0];
   $getsprice = explode("_",$quickprintsource[12])[1];
   $userlock = $quickprintsource[13];
-  if (mikhmon_currency_uses_integer_amounts($currency, $cekindo)) {
-    $price = $currency . " " . number_format($getprice, 0, ",", ".");
-    $sprice = $currency . " " . number_format($getsprice, 0, ",", ".");
-} else {
-    $price = $currency . " " . number_format($getprice);
-    $sprice = $currency . " " . number_format($getsprice);
-}
+	  $price = mikhmon_format_money_amount($getprice, $currency, $cekindo);
+	  $sprice = mikhmon_format_money_amount($getsprice, $currency, $cekindo);
 ?>
 <tr>
 <td><i class='fa fa-minus-square text-danger pointer' onclick="if(confirm('Are you sure to delete (<?= $package; ?>)?')){loadpage('./?hotspot=list-quick-print&remove&qpid=<?= $qpid; ?>&session=<?= $session; ?>')}else{}" title='Remove <?= $package; ?>'></i>&nbsp</td>	

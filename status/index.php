@@ -62,6 +62,7 @@ if (mikhmon_currency_uses_integer_amounts($currency, $cekindo)) {
 <link rel="stylesheet" type="text/css" href="../css/font-awesome/css/font-awesome.min.css" />
 <!-- Mikhmon UI -->
 <link rel="stylesheet" href="../css/mikhmon-ui.<?= $theme; ?>.min.css">
+<link rel="stylesheet" href="../css/mikhmon-responsive.css">
 <link rel="icon" href="../img/favicon.png" />
 <script>
 function goBack() {

@@ -19,6 +19,7 @@ session_start();
 ?>
 <?php
 error_reporting(0);
+include_once(__DIR__ . '/../include/csrf.php');
 if (!isset($_SESSION["mikhmon"]) && empty($_SESSION['manager_username'])) {
 	if (!empty($_SESSION['seller_username'])) {
 		header("Location:../sellers.php?action=tickets");
@@ -78,6 +79,7 @@ if ($telplate == "default" || $telplate == "rdefault") {
 	$popupQR = "javascript:window.open('./voucher/vpreview.php?usermode=up&qr=yes&session=" . $session . "','_blank','width=310,height=310')";
 }
 if (isset($_POST['save'])) {
+		csrf_guard();
 	$template = './voucher/' . $telplatet . '.php';
 	$handle = fopen($template, 'w') or die('Cannot open file:  ' . $template);
 
@@ -114,6 +116,7 @@ textarea{
 					</div>
 			<div class="card-body">
 				<form autocomplete="off" method="post" action="">
+					<?= csrf_field() ?>
 					<table class="table">
 						<tr>
 							<td>

@@ -19,12 +19,13 @@
 // hide all error
 error_reporting(0);
 include_once(__DIR__ . '/../include/mikhmon_compat.php');
+include_once(__DIR__ . '/../include/csrf.php');
 
 if (!isset($_SESSION["mikhmon"])) {
   header("Location:../admin.php?id=login");
 } else {
 
-  date_default_timezone_set($_SESSION['timezone']);
+	  date_default_timezone_set(mikhmon_safe_timezone($_SESSION['timezone'] ?? 'UTC'));
 
   $getprofile = $API->comm("/ip/hotspot/user/profile/print");
   $srvlist = $API->comm("/ip/hotspot/print");
@@ -208,6 +209,7 @@ if (mikhmon_currency_uses_integer_amounts($currency, $cekindo)) {
 
 
   if (isset($_POST['name'])) {
+    csrf_guard();
     $server = ($_POST['server']);
     $name = ($_POST['name']);
     $password = ($_POST['pass']);
@@ -280,6 +282,7 @@ include('./voucher/printbt.php');
 </div>
 <div class="card-body">
 <form autocomplete="new-password" method="post" action="">
+  <?= csrf_field() ?>
   <div>
     <?php if ($_SESSION['ubp'] != "") {
       echo "    <a class='btn bg-warning' href='./?hotspot=users&profile=" . $_SESSION['ubp'] . "&session=" . $session . "'><i class='fa fa-close'></i> ".$_close."</a>";

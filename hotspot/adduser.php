@@ -18,6 +18,7 @@
 session_start();
 // hide all error
 error_reporting(0);
+include_once(__DIR__ . '/../include/csrf.php');
 if (!isset($_SESSION["mikhmon"])) {
   header("Location:../admin.php?id=login");
 } else {
@@ -26,6 +27,7 @@ if (!isset($_SESSION["mikhmon"])) {
   $srvlist = $API->comm("/ip/hotspot/print");
 
   if (isset($_POST['name'])) {
+    csrf_guard();
     $server = ($_POST['server']);
     $name = ($_POST['name']);
     $password = ($_POST['pass']);
@@ -89,6 +91,7 @@ if (!isset($_SESSION["mikhmon"])) {
   </div>
   <div class="card-body">
 <form autocomplete="off" method="post" action="">  
+  <?= csrf_field() ?>
   <div>
   <?php if ($_SESSION['ubp'] != "") {
     echo "    <a class='btn bg-warning' href='./?hotspot=users&profile=" . $_SESSION['ubp'] . "&session=" . $session . "'> <i class='fa fa-close'></i> ".$_close."</a>";

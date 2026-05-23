@@ -191,6 +191,16 @@ if (!isset($_SESSION["mikhmon"])) {
     $hunit = "items";
   }
 
+// get & counting pppoe resources
+  $countpppactive = $API->comm("/ppp/active/print", array("count-only" => ""));
+  $countpppprofiles = $API->comm("/ppp/profile/print", array("count-only" => ""));
+  $countpppsecrets = $API->comm("/ppp/secret/print", array("count-only" => ""));
+  $countpppoeservers = $API->comm("/interface/pppoe-server/server/print", array("count-only" => ""));
+  $pactiveunit = ((int)$countpppactive > 1) ? "items" : "item";
+  $pprofileunit = ((int)$countpppprofiles > 1) ? "items" : "item";
+  $psecretunit = ((int)$countpppsecrets > 1) ? "items" : "item";
+  $pppoeserverunit = ((int)$countpppoeservers > 1) ? "items" : "item";
+
   if ($livereport == "disable") {
     $logh = "457px";
     $lreport = "style='display:none;'";
@@ -380,6 +390,45 @@ if (!isset($_SESSION["mikhmon"])) {
               </div>
             </div>
           </div>
+            <div class="card">
+              <div class="card-header"><h3><i class="fa fa-exchange"></i> <?= isset($_pppoe) ? $_pppoe : 'PPPoE' ?></h3></div>
+              <div class="card-body">
+                <div class="row dashboard-hotspot-grid">
+                  <div class="col-3 col-box-6">
+                    <div class="box bg-blue bmh-75">
+                      <a onclick="cancelPage()" href="./?ppp=active&session=<?= $session; ?>">
+                        <h1><?= (int)$countpppactive; ?><span class="box-stat-unit"><?= $pactiveunit; ?></span></h1>
+                        <div><i class="fa fa-link"></i> <?= isset($_ppp_active) ? $_ppp_active : 'PPP Active' ?></div>
+                      </a>
+                    </div>
+                  </div>
+                  <div class="col-3 col-box-6">
+                    <div class="box bg-green bmh-75">
+                      <a onclick="cancelPage()" href="./?ppp=profiles&session=<?= $session; ?>">
+                        <h1><?= (int)$countpppprofiles; ?><span class="box-stat-unit"><?= $pprofileunit; ?></span></h1>
+                        <div><i class="fa fa-list"></i> <?= isset($_ppp_profiles) ? $_ppp_profiles : 'PPP Profiles' ?></div>
+                      </a>
+                    </div>
+                  </div>
+                  <div class="col-3 col-box-6">
+                    <div class="box bg-yellow bmh-75">
+                      <a onclick="cancelPage()" href="./?ppp=secrets&session=<?= $session; ?>">
+                        <h1><?= (int)$countpppsecrets; ?><span class="box-stat-unit"><?= $psecretunit; ?></span></h1>
+                        <div><i class="fa fa-lock"></i> <?= isset($_ppp_secrets) ? $_ppp_secrets : 'PPP Secrets' ?></div>
+                      </a>
+                    </div>
+                  </div>
+                  <div class="col-3 col-box-6">
+                    <div class="box bg-red bmh-75">
+                      <a onclick="cancelPage()" href="./?ppp=servers&session=<?= $session; ?>">
+                        <h1><?= (int)$countpppoeservers; ?><span class="box-stat-unit"><?= $pppoeserverunit; ?></span></h1>
+                        <div><i class="fa fa-server"></i> <?= isset($_pppoe_servers) ? $_pppoe_servers : 'PPPoE Servers' ?></div>
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
         </div>
             <div class="card">
               <div class="card-header"><h3><i class="fa fa-area-chart"></i> <?= $_traffic ?> </h3></div>

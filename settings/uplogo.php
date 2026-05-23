@@ -19,11 +19,13 @@
 // hide all error
 error_reporting(0);
 include_once(__DIR__ . '/../include/mikhmon_compat.php');
+include_once(__DIR__ . '/../include/csrf.php');
 if (!isset($_SESSION["mikhmon"])) {
   header("Location:../admin.php?id=login");
 } else {
 
-  if (isset($_POST["submit"])) {
+	  if (isset($_POST["submit"])) {
+	    csrf_guard();
     $logo_dir = "./img/";
     $logo_file = $logo_dir . basename($_FILES["UploadLogo"]["name"]);
     $uploadOk = 1;
@@ -106,7 +108,8 @@ if (!isset($_SESSION["mikhmon"])) {
     <div class="card-body">
       <div>
     <?= $galat; ?>
-      <form action="" method="post" enctype="multipart/form-data">
+	      <form action="" method="post" enctype="multipart/form-data">
+	          <?= csrf_field() ?>
 
           <div class="pd-10"><?= $_format_file_name ?> : logo-<?= $session; ?>.png </div>
           <div class="input-group">
@@ -144,8 +147,13 @@ if (!isset($_SESSION["mikhmon"])) {
               
               <tr>
                 <td><a href="javascript:window.open('./img/<?= $file; ?>','_blank','width=300,height=300')"><img height="30px" src="./img/<?= $file; ?>" title="Open <?= $file; ?>"></a><br><span><?= $file; ?></span></td>
-                <td><a class="btn bg-danger" href="javascript:void(0)" onclick="if(confirm('Sure to delete <?= $file; ?> ?')){window.location='./admin.php?id=remove-logo&logo=<?= $file; ?>&session=<?= $session ?>'}else{}"><i class="fa fa-trash"></i> <?= $_delete ?></a>
-                </td>
+	                <td>
+	                  <form method="post" action="./admin.php?id=remove-logo&session=<?= urlencode($session) ?>" onsubmit="return confirm('Sure to delete <?= htmlspecialchars($file); ?> ?')" style="display:inline;">
+	                    <?= csrf_field() ?>
+	                    <input type="hidden" name="remove_logo" value="<?= htmlspecialchars($file); ?>">
+	                    <button type="submit" class="btn bg-danger"><i class="fa fa-trash"></i> <?= $_delete ?></button>
+	                  </form>
+	                </td>
               </tr>
               
           <?php 

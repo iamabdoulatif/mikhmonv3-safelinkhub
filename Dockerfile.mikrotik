@@ -41,13 +41,17 @@ RUN rm -rf \
       /src/src/tests \
       /src/src/Dockerfile \
       /src/src/Dockerfile.mikrotik \
+      /src/src/docker-output \
       /src/src/LICENSE \
       /src/src/LICENSE.txt \
       /src/src/README.md \
+      /src/src/backups \
+      /src/src/docs \
       /src/src/css/font-awesome/less \
       /src/src/css/font-awesome/scss \
       /src/src/wireguard-configs/* \
     && mkdir -p /src/src/logs /src/src/img /src/src/wireguard-configs \
+    && touch /src/src/logs/index.php \
     && find /src/src -type d -exec chmod 755 {} + \
     && find /src/src -type f -exec chmod 644 {} +
 

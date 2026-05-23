@@ -18,6 +18,7 @@
 
 // hide all error
 error_reporting(0);
+include_once(__DIR__ . '/../include/csrf.php');
 if (!isset($_SESSION["mikhmon"])) {
   header("Location:../admin.php?id=login");
 } else {
@@ -26,6 +27,7 @@ if (!isset($_SESSION["mikhmon"])) {
   $color = array('1' => 'bg-blue', 'bg-indigo', 'bg-purple', 'bg-pink', 'bg-red', 'bg-yellow', 'bg-green', 'bg-teal', 'bg-cyan', 'bg-grey', 'bg-light-blue');
 
   if (isset($_POST['save'])) {
+    csrf_guard();
 
     $suseradm = ($_POST['useradm']);
     $spassadm = encrypt($_POST['passadm']);
@@ -87,9 +89,8 @@ if (!isset($_SESSION["mikhmon"])) {
             <div class="card-body">
             <div class="row">
               <?php
-              foreach (file('./include/config.php') as $line) {
-                $value = explode("'", $line)[1];
-                if ($value == "" || $value == "mikhmon") {
+              foreach ((array)$data as $value => $row) {
+                if ($value == "" || $value == "mikhmon" || !is_array($row)) {
                 } else { ?>
                     <div class="col-12">
                         <div class="box bmh-75 box-bordered <?= $color[rand(1, 11)]; ?>">
@@ -107,8 +108,12 @@ if (!isset($_SESSION["mikhmon"])) {
                                       <?= $_session_name ?> : <?= $value; ?><br>
                                       <span class="connect pointer"  id="<?= $value; ?>"><i class="fa fa-external-link"></i> <?= $_open ?></span>&nbsp;
                                       <a href="./admin.php?id=settings&session=<?= $value; ?>"><i class="fa fa-edit"></i> <?= $_edit ?></a>&nbsp;
-                                      <a href="javascript:void(0)" onclick="if(confirm('Are you sure to delete data <?= $value;
-                                      echo " (" . explode('%', $data[$value][4])[1] . ")"; ?>?')){loadpage('./admin.php?id=remove-session&session=<?= $value; ?>')}else{}"><i class="fa fa-remove"></i> <?= $_delete ?></a>
+                                      <form method="post" action="./admin.php?id=remove-session" onsubmit="return confirm('Are you sure to delete data <?= $value;
+                                      echo " (" . explode('%', $data[$value][4])[1] . ")"; ?>?')" style="display:inline;">
+                                        <?= csrf_field() ?>
+                                        <input type="hidden" name="remove_session" value="<?= htmlspecialchars($value); ?>">
+                                        <button type="submit" class="btn bg-danger btn-sm" style="padding:2px 7px;"><i class="fa fa-remove"></i> <?= $_delete ?></button>
+                                      </form>
                                     </span>
 
                                   </div>
@@ -126,6 +131,7 @@ if (!isset($_SESSION["mikhmon"])) {
         </div>
 			    <div class="col-6">
           <form autocomplete="off" method="post" action="">
+            <?= csrf_field() ?>
             <div class="card">
               <div class="card-header">
                 <h3 class="card-title"><i class="fa fa-user-circle"></i> <?= $_admin ?></h3>

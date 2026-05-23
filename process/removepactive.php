@@ -18,9 +18,17 @@
 session_start();
 // hide all error
 error_reporting(0);
+include_once(__DIR__ . '/../include/csrf.php');
+include_once(__DIR__ . '/../include/pppoe_helpers.php');
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    mikhmon_ppp_redirect("./?ppp=active&session=" . urlencode($session));
+}
+
+csrf_guard();
 
 $API->comm("/ppp/active/remove", array(
-    ".id" => "$removepactive",
+    ".id" => mikhmon_ppp_safe_id($removepactive),
 ));
 
-echo "<script>window.location='./?ppp=active&session=" . $session . "'</script>";
+mikhmon_ppp_redirect("./?ppp=active&session=" . urlencode($session));

@@ -5,8 +5,10 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 }
 
 $_SESSION['mikhmon'] = 'mikhmon';
+$_SESSION['_csrf'] = 'ip-binding-duration-submit-token';
 $_SERVER['REQUEST_METHOD'] = 'POST';
 $_POST = array(
+    '_csrf' => 'ip-binding-duration-submit-token',
     'add_ip_binding_duration' => '1',
     'binding_mac' => 'aa:bb:cc:dd:ee:ff',
     'binding_address' => '10.10.0.44',

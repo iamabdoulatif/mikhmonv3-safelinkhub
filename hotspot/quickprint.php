@@ -58,13 +58,8 @@ for ($i = 0; $i < $TotalReg; $i++) {
   $getprice = explode("_",$quickprintsource[12])[0];
   $getsprice = explode("_",$quickprintsource[12])[1];
   $userlock = $quickprintsource[13];
-  if (mikhmon_currency_uses_integer_amounts($currency, $cekindo)) {
-    $price = $currency . " " . number_format((float)$getprice, 0, ",", ".");
-    $sprice = $currency . " " . number_format((float)$getsprice, 0, ",", ".");
-} else {
-    $price = $currency . " " . number_format((float)$getprice);
-    $sprice = $currency . " " . number_format((float)$getsprice);
-}
+	  $price = mikhmon_format_money_amount($getprice, $currency, $cekindo);
+	  $sprice = mikhmon_format_money_amount($getsprice, $currency, $cekindo);
   ?>
 	     <div class="col-4">
         <div id='./hotspot/quickuser.php?quickprint=<?= $qpname ?>&session=<?= $session; ?>' class="quick pointer box bmh-75 box-bordered <?= $color[rand(1, 11)]; ?>" title='<?= $_print.' '.$_package.' '. $package; ?>'>

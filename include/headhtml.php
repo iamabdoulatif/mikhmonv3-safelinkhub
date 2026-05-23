@@ -35,6 +35,8 @@ error_reporting(0);
 		<!-- Mikhmon UI -->
 		<link rel="stylesheet" href="css/mikhmon-ui.<?= $theme; ?>.min.css">
 		<link rel="stylesheet" href="css/mikhmon-portal.css">
+		<!-- Responsive overrides (loaded last so they win on mobile) -->
+		<link rel="stylesheet" href="css/mikhmon-responsive.css">
 		<!-- favicon -->
 		<link rel="icon" href="./img/favicon.png" />
 		<!-- jQuery -->

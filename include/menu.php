@@ -117,6 +117,11 @@ include ('./include/version.php');
     $spactive = "active";
     $mpage = $_ppp_active;
     $pppmenu = "menu-open";
+  } elseif ($ppp == "servers" || $ppp == "add-server" || $pppoeserverbyname != "" || $enablepppoeserver != "" || $disablepppoeserver != "" || $removepppoeserver != "") {
+    $mppp = "active";
+    $spppoeserver = "active";
+    $mpage = isset($_pppoe_servers) ? $_pppoe_servers : "PPPoE Servers";
+    $pppmenu = "menu-open";
   } elseif ($sys == "scheduler" || $enablesch != "" || $disablesch != "" || $removesch != "") {
     $sysmenu = "active";
     $ssch = "active";
@@ -243,8 +248,8 @@ if($idleto != "disable"){
     require_once __DIR__ . '/anti_fraud.php';
     $__af_open = anti_fraud_count_unack();
 ?>
-  <a href="./admin.php?id=fraud&session=<?= urlencode($session) ?>" class="menu <?= ($id=='fraud' ? 'active' : '') ?>" style="position:relative;">
-    <i class="fa fa-shield"></i> Anti-fraude
+  <a href="./admin.php?id=fraud&session=<?= urlencode($session) ?>" class="menu <?= ($id=='fraud' ? 'active' : '') ?>" style="position:relative;padding-right:42px;">
+    <i class="fa fa-shield"></i> <span style="display:inline-block;max-width:135px;vertical-align:middle;line-height:1.25;">Anti-fraude et Audit Réseau</span>
     <?php if ($__af_open > 0): ?>
       <span style="position:absolute;right:14px;top:50%;transform:translateY(-50%);background:#c62828;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:bold;"><?= $__af_open ?></span>
     <?php endif; ?>
@@ -296,8 +301,7 @@ include('./info.php');
   <select class="connect optfa ses text-right mr-t-10 pd-5">
     <option id="MikhmonSession" value="<?= $session; ?>"><?= $hotspotname; ?></option>
       <?php
-      foreach (file('./include/config.php') as $line) {
-        $sesname = explode("'", $line)[1];
+      foreach ((array)$data as $sesname => $row) {
         if ($sesname == "" || $sesname== "mikhmon") {
         } else {
         if($sesname == $session){
@@ -353,6 +357,16 @@ include('./info.php');
   <a href="./?hotspot=quick-print&session=<?= $session; ?>" class="menu <?= $squick; ?>"> <i class="fa fa-print"></i> <?= $_quick_print ?> </a>
   <!--vouchers-->
   <a href="./?hotspot=users-by-profile&session=<?= $session; ?>" class="menu <?= $susersbp; ?>"> <i class="fa fa-ticket"></i> <?= $_vouchers ?> </a>
+  <!--pppoe-->
+  <div class="dropdown-btn <?= $mppp; ?>"><i class="fa fa-exchange"></i> <?= isset($_pppoe) ? $_pppoe : 'PPPoE' ?>
+    <i class="fa fa-caret-down"></i>
+  </div>
+  <div class="dropdown-container <?= $pppmenu; ?>">
+    <a href="./?ppp=active&session=<?= $session; ?>" class="<?= $spactive; ?>"> &nbsp;&nbsp;&nbsp;<i class="fa fa-link"></i> <?= isset($_ppp_active) ? $_ppp_active : 'PPP Active' ?> </a>
+    <a href="./?ppp=profiles&session=<?= $session; ?>" class="<?= $spprofile; ?>"> &nbsp;&nbsp;&nbsp;<i class="fa fa-list"></i> <?= isset($_ppp_profiles) ? $_ppp_profiles : 'PPP Profiles' ?> </a>
+    <a href="./?ppp=secrets&session=<?= $session; ?>" class="<?= $ssecrets; ?>"> &nbsp;&nbsp;&nbsp;<i class="fa fa-lock"></i> <?= isset($_ppp_secrets) ? $_ppp_secrets : 'PPP Secrets' ?> </a>
+    <a href="./?ppp=servers&session=<?= $session; ?>" class="<?= $spppoeserver; ?>"> &nbsp;&nbsp;&nbsp;<i class="fa fa-server"></i> <?= isset($_pppoe_servers) ? $_pppoe_servers : 'PPPoE Servers' ?> </a>
+  </div>
    <!--log-->
   <div class="dropdown-btn <?= $log; ?>"><i class=" fa fa-align-justify"></i> <?= $_log ?>
     <i class="fa fa-caret-down"></i>

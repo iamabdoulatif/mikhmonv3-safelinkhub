@@ -18,7 +18,6 @@
 session_start();
 // hide all error
 error_reporting(0);
-
 // remove ip binding
 if ($removeipbinding != "") {
 	$API->comm("/ip/hotspot/ip-binding/remove", array(

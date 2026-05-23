@@ -18,7 +18,6 @@
 session_start();
 // hide all error
 error_reporting(0);
-
 $pid = $removeuserprofile;
 $pname = $_GET['pname'];
 

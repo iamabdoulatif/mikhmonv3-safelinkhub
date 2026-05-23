@@ -16,8 +16,10 @@ include('./include/sellers_config.php');
 include('./include/managers_config.php');
 include('./include/config.php');
 include_once('./include/csrf.php');
+include_once('./include/mikhmon_compat.php');
 include_once('./include/transfer_log.php');
 include_once('./include/seller_ticket_helper.php');
+include_once('./include/accounting_notifications.php');
 
 $session = isset($_GET['session']) ? $_GET['session'] : '';
 include('./include/readcfg.php');
@@ -37,6 +39,7 @@ $transfer_error = '';
 $transfer_log_msg   = '';
 $transfer_log_error = '';
 $force_active_tab   = '';
+$API_ms_connected  = false;
 
 // ── Stock de tous les vendeurs (tickets non utilisés) ────────────────────────
 $allSellerStock  = array(); // ['sellerKey']['profile'] = count
@@ -48,6 +51,7 @@ if (!empty($iphost)) {
     $API_ms = new RouterosAPI();
     $API_ms->debug = false;
     if ($API_ms->connect($iphost, $userhost, decrypt($passwdhost))) {
+        $API_ms_connected = true;
         $unusedAll = $API_ms->comm("/ip/hotspot/user/print", array("?uptime" => "0s"));
         if (is_array($unusedAll)) {
             foreach ($sellers_data as $sk => $sd) {
@@ -234,8 +238,11 @@ if (isset($_POST['delete_transfer_log']) || isset($_POST['clear_transfer_logs'])
 }
 
 // ── Ajouter un vendeur ───────────────────────────────────────────────────────
-if (isset($_POST['add_seller']) || isset($_POST['change_pass']) || isset($_POST['add_manager']) || isset($_POST['change_manager_pass']) || isset($_GET['del_seller'])) {
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') csrf_guard();
+if (isset($_POST['add_seller']) || isset($_POST['change_pass']) || isset($_POST['update_seller_account']) || isset($_POST['add_manager']) || isset($_POST['change_manager_pass']) || isset($_POST['update_manager_account']) || isset($_POST['delete_seller']) || isset($_POST['delete_manager'])) {
+    csrf_guard();
+}
+if (isset($_POST['admin_send_accounting_notice'])) {
+    csrf_guard();
 }
 
 function mikhmon_default_account($accounts, $usernamePrefix, $displayPrefix) {
@@ -257,10 +264,21 @@ function mikhmon_default_account($accounts, $usernamePrefix, $displayPrefix) {
         'name' => $displayPrefix . ' ' . $suffix,
     );
 }
+
+function mikhmon_account_key($value) {
+    return preg_replace('/[^a-zA-Z0-9_]/', '', trim((string)$value));
+}
+
+function mikhmon_account_label($value) {
+    $key = mikhmon_account_key($value);
+    if ($key === '') return '';
+    return ucfirst(strtolower($key));
+}
+
 if (isset($_POST['add_seller'])) {
-    $new_user    = preg_replace('/[^a-zA-Z0-9_]/', '', trim($_POST['new_user']));
+    $new_user    = mikhmon_account_key($_POST['new_user']);
     $new_pass    = trim($_POST['new_pass']);
-    $new_name    = htmlspecialchars(trim($_POST['new_name']));
+    $new_name    = mikhmon_account_label($new_user);
     $new_session = trim($_POST['new_session']);
 
     if ($new_user == '' || $new_pass == '' || $new_name == '') {
@@ -269,8 +287,12 @@ if (isset($_POST['add_seller'])) {
         $msg = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> ' . $_seller_exists . '</div>';
     } else {
         $encrypted_pass = encrypt($new_pass);
-        $line = '$sellers_data[\'' . $new_user . '\'] = array(\'password\' => \'' . $encrypted_pass . '\', \'name\' => \'' . $new_name . '\', \'session\' => \'' . $new_session . '\', \'commission\' => 10);' . "\n";
-        file_put_contents($sellers_file, $line, FILE_APPEND);
+        file_put_contents($sellers_file, mikhmon_php_assignment_line('sellers_data', $new_user, array(
+            'password' => $encrypted_pass,
+            'name' => $new_name,
+            'session' => $new_session,
+            'commission' => 10,
+        )), FILE_APPEND | LOCK_EX);
         $msg = '<div class="bg-success" style="padding:8px;border-radius:5px;"><i class="fa fa-check"></i> ' . $_seller . ' <b>' . $new_user . '</b> OK.<br><small>' . $_seller_id . ': <b>' . htmlspecialchars($new_user) . '</b> | ' . $_password . ': <b>' . htmlspecialchars($new_pass) . '</b></small></div>';
         // Recharger la config
         include($sellers_file);
@@ -278,21 +300,48 @@ if (isset($_POST['add_seller'])) {
 }
 
 // ── Supprimer un vendeur ─────────────────────────────────────────────────────
-if (isset($_GET['del_seller'])) {
-    $del = preg_replace('/[^a-zA-Z0-9_]/', '', $_GET['del_seller']);
+if (isset($_POST['delete_seller'])) {
+    $del = preg_replace('/[^a-zA-Z0-9_]/', '', $_POST['delete_seller']);
     if ($del != '') {
-        $fc = file($sellers_file);
-        $f  = fopen($sellers_file, 'w');
-        foreach ($fc as $line) {
-            if (strpos($line, '$sellers_data[\'' . $del . '\']') === false) {
-                fputs($f, $line);
-            }
-        }
-        fclose($f);
+        mikhmon_delete_assignment_line_in_file($sellers_file, 'sellers_data', $del);
         $msg = '<div class="bg-warning" style="padding:8px;border-radius:5px;"><i class="fa fa-trash"></i> ' . $_seller . ' <b>' . htmlspecialchars($del) . '</b>.</div>';
-        // Recharger
-        $sellers_data = array();
-        include($sellers_file);
+        unset($sellers_data[$del], $allSellerStock[$del]);
+    }
+}
+
+// ── Modifier un compte vendeur ───────────────────────────────────────────────
+if (isset($_POST['update_seller_account'])) {
+    $old_user = mikhmon_account_key(isset($_POST['edit_seller_user']) ? $_POST['edit_seller_user'] : '');
+    $new_user = mikhmon_account_key(isset($_POST['new_seller_user']) ? $_POST['new_seller_user'] : '');
+    $new_name = trim(isset($_POST['new_seller_name']) ? $_POST['new_seller_name'] : '');
+    $new_pass = trim(isset($_POST['new_seller_pass']) ? $_POST['new_seller_pass'] : '');
+
+    if ($old_user === '' || !isset($sellers_data[$old_user])) {
+        $msg = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> ' . $_required_fields_msg . '</div>';
+    } elseif ($new_user === '' || $new_name === '') {
+        $msg = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> ' . $_required_fields_msg . '</div>';
+    } elseif ($new_user !== $old_user && isset($sellers_data[$new_user])) {
+        $msg = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> ' . $_seller_exists . '</div>';
+    } else {
+        $currentSeller = $sellers_data[$old_user];
+        $sellerRecord = array(
+            'password' => $new_pass !== '' ? encrypt($new_pass) : $currentSeller['password'],
+            'name' => $new_name,
+            'session' => isset($currentSeller['session']) ? $currentSeller['session'] : $session,
+            'commission' => isset($currentSeller['commission']) ? (int)$currentSeller['commission'] : 0,
+        );
+
+        if (mikhmon_replace_assignment_line_in_file($sellers_file, 'sellers_data', $new_user, $sellerRecord, $old_user)) {
+            unset($sellers_data[$old_user]);
+            $sellers_data[$new_user] = $sellerRecord;
+            if ($new_user !== $old_user && isset($allSellerStock[$old_user])) {
+                $allSellerStock[$new_user] = $allSellerStock[$old_user];
+                unset($allSellerStock[$old_user]);
+            }
+            $msg = '<div class="bg-success" style="padding:8px;border-radius:5px;"><i class="fa fa-check"></i> ' . $_seller . ' <b>' . htmlspecialchars($new_user) . '</b> OK.</div>';
+        } else {
+            $msg = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> ' . $_required_fields_msg . '</div>';
+        }
     }
 }
 
@@ -307,10 +356,12 @@ if (isset($_POST['change_pass'])) {
         $f  = fopen($sellers_file, 'w');
         foreach ($fc as $line) {
             if (strpos($line, '$sellers_data[\'' . $cp_user . '\']') !== false) {
-                $line = '$sellers_data[\'' . $cp_user . '\'] = array(\'password\' => \'' . $encrypted_new
-                    . '\', \'name\' => \'' . $sellers_data[$cp_user]['name']
-                    . '\', \'session\' => \'' . $sellers_data[$cp_user]['session']
-                    . '\', \'commission\' => ' . $curr_comm . ');' . "\n";
+                $line = mikhmon_php_assignment_line('sellers_data', $cp_user, array(
+                    'password' => $encrypted_new,
+                    'name' => $sellers_data[$cp_user]['name'],
+                    'session' => $sellers_data[$cp_user]['session'],
+                    'commission' => $curr_comm,
+                ));
             }
             fputs($f, $line);
         }
@@ -326,19 +377,12 @@ if (isset($_POST['set_commission'])) {
     $sc_user = preg_replace('/[^a-zA-Z0-9_]/', '', trim($_POST['sc_user']));
     $sc_rate = max(0, min(100, (int)$_POST['sc_rate']));
     if ($sc_user != '' && isset($sellers_data[$sc_user])) {
-        $fc = file($sellers_file);
-        $f  = fopen($sellers_file, 'w');
-        foreach ($fc as $line) {
-            if (strpos($line, '$sellers_data[\'' . $sc_user . '\']') !== false) {
-                if (preg_match("/'commission'\s*=>\s*\d+/", $line)) {
-                    $line = preg_replace("/'commission'\s*=>\s*\d+/", "'commission' => " . $sc_rate, $line);
-                } else {
-                    $line = rtrim(rtrim($line), ');') . ", 'commission' => " . $sc_rate . ");\n";
-                }
-            }
-            fputs($f, $line);
-        }
-        fclose($f);
+        mikhmon_replace_assignment_line_in_file($sellers_file, 'sellers_data', $sc_user, array(
+            'password' => $sellers_data[$sc_user]['password'],
+            'name' => $sellers_data[$sc_user]['name'],
+            'session' => $sellers_data[$sc_user]['session'],
+            'commission' => $sc_rate,
+        ));
         $msg = '<div class="bg-success" style="padding:8px;border-radius:5px;"><i class="fa fa-check"></i> Commission <b>' . htmlspecialchars($sc_user) . '</b> → <b>' . $sc_rate . '%</b></div>';
         $sellers_data[$sc_user]['commission'] = $sc_rate;
     }
@@ -346,9 +390,9 @@ if (isset($_POST['set_commission'])) {
 
 // ── Ajouter un gérant ────────────────────────────────────────────────────────
 if (isset($_POST['add_manager'])) {
-    $nmu = preg_replace('/[^a-zA-Z0-9_]/', '', trim($_POST['nm_user']));
+    $nmu = mikhmon_account_key($_POST['nm_user']);
     $nmp = trim($_POST['nm_pass']);
-    $nmn = htmlspecialchars(trim($_POST['nm_name']));
+    $nmn = mikhmon_account_label($nmu);
     $nms = trim($_POST['nm_session']);
     if ($nmu == '' || $nmp == '' || $nmn == '') {
         $msg_mgr = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> ' . $_required_fields_msg . '</div>';
@@ -356,26 +400,56 @@ if (isset($_POST['add_manager'])) {
         $msg_mgr = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> ' . (isset($_manager_exists) ? $_manager_exists : 'Already exists.') . '</div>';
     } else {
         $ep = encrypt($nmp);
-        file_put_contents($managers_file, '$managers_data[\'' . $nmu . '\'] = array(\'password\' => \'' . $ep . '\', \'name\' => \'' . $nmn . '\', \'session\' => \'' . $nms . '\');' . "\n", FILE_APPEND);
+        file_put_contents($managers_file, mikhmon_php_assignment_line('managers_data', $nmu, array(
+            'password' => $ep,
+            'name' => $nmn,
+            'session' => $nms,
+        )), FILE_APPEND | LOCK_EX);
         $msg_mgr = '<div class="bg-success" style="padding:8px;border-radius:5px;"><i class="fa fa-check"></i> ' . (isset($_manager) ? $_manager : 'Manager') . ' <b>' . $nmu . '</b> OK.<br><small>' . $_seller_id . ': <b>' . htmlspecialchars($nmu) . '</b> | ' . $_password . ': <b>' . htmlspecialchars($nmp) . '</b></small></div>';
         include($managers_file);
     }
 }
 // ── Supprimer un gérant ───────────────────────────────────────────────────────
-if (isset($_GET['del_manager'])) {
-    $dm = preg_replace('/[^a-zA-Z0-9_]/', '', $_GET['del_manager']);
+if (isset($_POST['delete_manager'])) {
+    $force_active_tab = 'managers';
+    $dm = preg_replace('/[^a-zA-Z0-9_]/', '', $_POST['delete_manager']);
     if ($dm != '') {
-        $fc = file($managers_file);
-        $f  = fopen($managers_file, 'w');
-        foreach ($fc as $ln) {
-            if (strpos($ln, '$managers_data[\'' . $dm . '\']') === false) fputs($f, $ln);
-        }
-        fclose($f);
+        mikhmon_delete_assignment_line_in_file($managers_file, 'managers_data', $dm);
         $msg_mgr = '<div class="bg-warning" style="padding:8px;border-radius:5px;"><i class="fa fa-trash"></i> ' . (isset($_manager) ? $_manager : 'Manager') . ' <b>' . htmlspecialchars($dm) . '</b>.</div>';
-        $managers_data = array();
-        include($managers_file);
+        unset($managers_data[$dm]);
     }
 }
+
+// ── Modifier un compte gérant ───────────────────────────────────────────────
+if (isset($_POST['update_manager_account'])) {
+    $force_active_tab = 'managers';
+    $old_manager = mikhmon_account_key(isset($_POST['edit_manager_user']) ? $_POST['edit_manager_user'] : '');
+    $new_manager = mikhmon_account_key(isset($_POST['new_manager_user']) ? $_POST['new_manager_user'] : '');
+    $new_name = trim(isset($_POST['new_manager_name']) ? $_POST['new_manager_name'] : '');
+    $new_pass = trim(isset($_POST['new_manager_pass']) ? $_POST['new_manager_pass'] : '');
+
+    if ($old_manager === '' || !isset($managers_data[$old_manager]) || $new_manager === '' || $new_name === '') {
+        $msg_mgr = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> ' . $_required_fields_msg . '</div>';
+    } elseif ($new_manager !== $old_manager && isset($managers_data[$new_manager])) {
+        $msg_mgr = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> ' . (isset($_manager_exists) ? $_manager_exists : 'Already exists.') . '</div>';
+    } else {
+        $currentManager = $managers_data[$old_manager];
+        $managerRecord = array(
+            'password' => $new_pass !== '' ? encrypt($new_pass) : $currentManager['password'],
+            'name' => $new_name,
+            'session' => isset($currentManager['session']) ? $currentManager['session'] : $session,
+        );
+
+        if (mikhmon_replace_assignment_line_in_file($managers_file, 'managers_data', $new_manager, $managerRecord, $old_manager)) {
+            unset($managers_data[$old_manager]);
+            $managers_data[$new_manager] = $managerRecord;
+            $msg_mgr = '<div class="bg-success" style="padding:8px;border-radius:5px;"><i class="fa fa-check"></i> ' . (isset($_manager) ? $_manager : 'Manager') . ' <b>' . htmlspecialchars($new_manager) . '</b> OK.</div>';
+        } else {
+            $msg_mgr = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> ' . $_required_fields_msg . '</div>';
+        }
+    }
+}
+
 // ── Modifier le mot de passe d'un gérant ─────────────────────────────────────
 if (isset($_POST['change_manager_pass'])) {
     $cmu = preg_replace('/[^a-zA-Z0-9_]/', '', trim($_POST['cmp_user']));
@@ -386,7 +460,11 @@ if (isset($_POST['change_manager_pass'])) {
         $f   = fopen($managers_file, 'w');
         foreach ($fc as $ln) {
             if (strpos($ln, '$managers_data[\'' . $cmu . '\']') !== false) {
-                $ln = '$managers_data[\'' . $cmu . '\'] = array(\'password\' => \'' . $en . '\', \'name\' => \'' . $managers_data[$cmu]['name'] . '\', \'session\' => \'' . $managers_data[$cmu]['session'] . '\');' . "\n";
+                $ln = mikhmon_php_assignment_line('managers_data', $cmu, array(
+                    'password' => $en,
+                    'name' => $managers_data[$cmu]['name'],
+                    'session' => $managers_data[$cmu]['session'],
+                ));
             }
             fputs($f, $ln);
         }
@@ -398,9 +476,8 @@ if (isset($_POST['change_manager_pass'])) {
 
 // ── Lister les sessions disponibles ─────────────────────────────────────────
 $available_sessions = array();
-foreach (file('./include/config.php') as $line) {
-    $sesname = explode("'", $line)[1];
-    if ($sesname != '' && $sesname != 'mikhmon') {
+foreach ((array)$data as $sesname => $row) {
+    if ($sesname != '' && $sesname != 'mikhmon' && is_array($row)) {
         $available_sessions[] = $sesname;
     }
 }
@@ -411,15 +488,100 @@ $active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'sellers';
 if ($force_active_tab !== '') {
     $active_tab = $force_active_tab;
 }
+if (!in_array($active_tab, array('sellers', 'managers', 'accounting', 'transfers'), true)) {
+    $active_tab = 'sellers';
+}
 $adminDashboardUrl = $session !== '' ? './?session=' . urlencode($session) : './admin.php?id=sessions';
+
+// ── Comptabilité admin par arrêt de période ────────────────────────────────
+$adminAccountingMonthKey = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', isset($_GET['acct_month']) ? $_GET['acct_month'] : ''));
+if (!preg_match('/^[a-z]{3}\d{4}$/', $adminAccountingMonthKey)) {
+    $adminAccountingMonthKey = strtolower(date("M")) . date("Y");
+}
+$adminAccountingBounds = mikhmon_accounting_month_bounds($adminAccountingMonthKey);
+$adminAccountingFrom = mikhmon_accounting_iso_date(isset($_GET['acct_from']) ? $_GET['acct_from'] : '', $adminAccountingBounds['from']);
+$adminAccountingTo = mikhmon_accounting_iso_date(isset($_GET['acct_to']) ? $_GET['acct_to'] : '', $adminAccountingBounds['to']);
+if ($adminAccountingFrom > $adminAccountingTo) {
+    $adminAccountingTmp = $adminAccountingFrom;
+    $adminAccountingFrom = $adminAccountingTo;
+    $adminAccountingTo = $adminAccountingTmp;
+}
+
+$adminAccountingSellersData = array();
+foreach ($sellers_data as $sk => $sd) {
+    $sellerSession = trim(isset($sd['session']) ? $sd['session'] : '');
+    if ($sellerSession === '' || $sellerSession === $session) {
+        $adminAccountingSellersData[$sk] = $sd;
+    }
+}
+$adminAccountingSeller = preg_replace('/[^a-zA-Z0-9_]/', '', isset($_GET['acct_seller']) ? $_GET['acct_seller'] : '');
+if ($adminAccountingSeller !== '' && !isset($adminAccountingSellersData[$adminAccountingSeller])) {
+    $adminAccountingSeller = '';
+}
+$adminAccountingSettlementTime = mikhmon_accounting_settlement_time(isset($_GET['acct_settled_at']) ? $_GET['acct_settled_at'] : (isset($_POST['acct_settled_at']) ? $_POST['acct_settled_at'] : ''), date('H:i:s'));
+$adminAccountingNextSettlementTime = mikhmon_accounting_settlement_time(isset($_GET['acct_next_settled_at']) ? $_GET['acct_next_settled_at'] : (isset($_POST['acct_next_settled_at']) ? $_POST['acct_next_settled_at'] : ''), $adminAccountingSettlementTime);
+
+$adminAccountingSales = array();
+if ($active_tab === 'accounting' && !empty($iphost)) {
+    if (!isset($API_ms) || !$API_ms_connected) {
+        $API_ms = new RouterosAPI();
+        $API_ms->debug = false;
+        $API_ms_connected = $API_ms->connect($iphost, $userhost, decrypt($passwdhost));
+    }
+    if ($API_ms_connected) {
+        $adminAccountingSales = mikhmon_fetch_sales_by_month($API_ms, $adminAccountingMonthKey);
+    }
+}
+$adminAccountingSummary = mikhmon_accounting_period_summary(
+    $adminAccountingSales,
+    $adminAccountingSellersData,
+    $adminAccountingFrom,
+    $adminAccountingTo,
+    $adminAccountingSeller
+);
+$adminAccountingNextFrom = '';
+$adminAccountingNextTo = $adminAccountingBounds['to'];
+if ($adminAccountingTo !== '') {
+    $adminAccountingNextDate = new DateTime($adminAccountingTo);
+    $adminAccountingNextDate->modify('+1 day');
+    $adminAccountingNextIso = $adminAccountingNextDate->format('Y-m-d');
+    if ($adminAccountingNextIso <= $adminAccountingBounds['to']) {
+        $adminAccountingNextFrom = $adminAccountingNextIso;
+    }
+}
+$adminAccountingBaseUrl = './admin.php?id=sellers&session=' . urlencode($session) . '&tab=accounting&acct_month=' . urlencode($adminAccountingMonthKey);
+$adminAccountingNoticeMsg = '';
+$adminAccountingNoticeError = '';
+$adminAccountingNoticeTargets = mikhmon_accounting_notification_targets($adminAccountingSummary, $adminAccountingSellersData, $adminAccountingSeller);
+if (isset($_POST['admin_send_accounting_notice'])) {
+    $sentCount = mikhmon_accounting_publish_notifications(
+        'admin',
+        isset($_SESSION['mikhmon']) ? $_SESSION['mikhmon'] : 'Admin',
+        $session,
+        $adminAccountingSellersData,
+        $adminAccountingNoticeTargets,
+        $adminAccountingFrom,
+        $adminAccountingTo,
+        $adminAccountingSettlementTime,
+        $adminAccountingNextFrom,
+        $adminAccountingNextTo,
+        $adminAccountingNextSettlementTime
+    );
+    if ($sentCount > 0) {
+        $adminAccountingNoticeMsg = $sentCount . ' notification(s) envoyée(s) aux vendeurs concernés.';
+    } else {
+        $adminAccountingNoticeError = 'Aucun vendeur concerné par cette période.';
+    }
+}
 ?>
 <style>
-/* ── Onglets Vendeurs / Gérants / Transferts ── */
+/* ── Onglets Vendeurs / Gérants / Comptabilité / Transferts ── */
 .ms-tab-bar { display:flex; gap:10px; border-bottom:2px solid #ddd; margin-bottom:18px; overflow-x:auto; overflow-y:hidden; padding-bottom:8px; -webkit-overflow-scrolling:touch; scrollbar-width:thin; }
 .ms-tab-btn { flex:0 0 auto; min-width:132px; white-space:nowrap; padding:10px 12px; border:none; background:none; font-weight:bold; font-size:13px; cursor:pointer; border-bottom:3px solid transparent; margin-bottom:-2px; transition:color .15s,border-color .15s; outline:none; }
 .ms-tab-btn i { display:block; font-size:16px; margin-bottom:3px; }
 .ms-tab-sellers.ms-active  { color:#27ae60; border-bottom-color:#27ae60; }
 .ms-tab-managers.ms-active { color:#8e44ad; border-bottom-color:#8e44ad; }
+.ms-tab-accounting.ms-active { color:#5b2c8d; border-bottom-color:#5b2c8d; }
 .ms-tab-transfers.ms-active{ color:#e67e22; border-bottom-color:#e67e22; }
 .ms-tab-btn:not(.ms-active) { color:#6b7280; }
 .ms-tab-section { display:none; }
@@ -442,9 +604,91 @@ $adminDashboardUrl = $session !== '' ? './?session=' . urlencode($session) : './
     font-size: 13px;
     color: #555;
 }
+.admin-accounting-cards { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:18px; }
+.admin-accounting-card { flex:1; min-width:150px; border-radius:8px; padding:14px 16px; }
+.admin-accounting-card-label { font-size:11px; font-weight:bold; text-transform:uppercase; letter-spacing:.5px; }
+.admin-accounting-card-value { font-size:22px; font-weight:bold; margin-top:2px; }
+.accounting-settlement-chip {
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  padding:3px 9px;
+  border-radius:14px;
+  background:#edf2f7;
+  color:#243447;
+  font-size:12px;
+  font-weight:bold;
+  white-space:nowrap;
+}
+.accounting-mobile-settlement { display:none; margin-top:6px; }
+.accounting-notice-box {
+  border:1px solid #d7deea;
+  border-left:4px solid #34495e;
+  border-radius:8px;
+  background:#f8fafc;
+  padding:14px 16px;
+  margin-bottom:16px;
+}
+.accounting-notice-preview {
+  background:#fff;
+  border:1px solid #e2e8f0;
+  border-radius:6px;
+  padding:10px 12px;
+  color:#243447;
+  line-height:1.45;
+  margin:10px 0;
+}
 .table-responsive { overflow-x: auto; }
 @media (max-width: 600px) {
     .admin-transfer-grid { grid-template-columns: 1fr; }
+    .admin-accounting-card { min-width:100%; }
+    .accounting-responsive-table { min-width:0 !important; border:0 !important; }
+    .accounting-responsive-table thead { display:none; }
+    .accounting-responsive-table,
+    .accounting-responsive-table tbody,
+    .accounting-responsive-table tfoot,
+    .accounting-responsive-table tr,
+    .accounting-responsive-table td {
+      display:block;
+      width:100%;
+      box-sizing:border-box;
+    }
+    .accounting-responsive-table tr {
+      margin-bottom:10px;
+      border:1px solid #d7deea;
+      border-radius:8px;
+      overflow:hidden;
+      background:#fff;
+    }
+    .accounting-responsive-table td {
+      display:flex;
+      justify-content:space-between;
+      gap:14px;
+      text-align:right !important;
+      padding:9px 12px !important;
+      border-left:0 !important;
+      border-right:0 !important;
+    }
+    .accounting-responsive-table td:before {
+      content:attr(data-label);
+      flex:0 0 42%;
+      color:#64748b;
+      font-weight:bold;
+      text-align:left;
+    }
+    .accounting-responsive-table .accounting-seller-cell {
+      display:block;
+      text-align:left !important;
+    }
+    .accounting-responsive-table .accounting-seller-cell:before { display:none; content:''; }
+    .accounting-responsive-table .accounting-time-cell { display:none; }
+    .accounting-mobile-settlement { display:inline-flex; }
+    .accounting-responsive-table tfoot tr { background:#5b2c8d; }
+    .accounting-responsive-table tfoot td {
+      background:#5b2c8d !important;
+      color:#fff !important;
+    }
+    .accounting-responsive-table tfoot td:before { color:rgba(255,255,255,.82); }
 }
 </style>
 
@@ -482,6 +726,11 @@ $adminDashboardUrl = $session !== '' ? './?session=' . urlencode($session) : './
           class="ms-tab-btn ms-tab-managers<?= $active_tab==='managers' ? ' ms-active' : '' ?>">
     <i class="fa fa-briefcase"></i>
     <?= isset($_managers) ? $_managers : 'Managers' ?>
+  </button>
+  <button id="mstab-accounting" onclick="msTab('accounting')" type="button"
+          class="ms-tab-btn ms-tab-accounting<?= $active_tab==='accounting' ? ' ms-active' : '' ?>">
+    <i class="fa fa-calculator"></i>
+    <?= isset($_manager_accounting) ? $_manager_accounting : 'Comptabilité' ?>
   </button>
   <button id="mstab-transfers" onclick="msTab('transfers')" type="button"
           class="ms-tab-btn ms-tab-transfers<?= $active_tab==='transfers' ? ' ms-active' : '' ?>">
@@ -531,11 +780,16 @@ $adminDashboardUrl = $session !== '' ? './?session=' . urlencode($session) : './
             </a>
           </td>
           <td>
-            <a href="?id=sellers&session=<?= $session ?>&del_seller=<?= urlencode($su) ?>"
-               onclick="return confirm('<?= isset($_delete) ? addslashes($_delete) : 'Delete' ?> <?= htmlspecialchars($su) ?> ?')"
-               class="btn bg-danger btn-sm" title="<?= isset($_delete) ? $_delete : 'Delete' ?>">
-              <i class="fa fa-trash"></i>
+            <a href="#edit_seller_<?= htmlspecialchars($su) ?>" class="btn bg-primary btn-sm" title="<?= isset($_edit) ? $_edit : 'Edit' ?>">
+              <i class="fa fa-edit"></i>
             </a>
+            <form method="post" action="?id=sellers&session=<?= urlencode($session) ?>" onsubmit="return confirm('<?= isset($_delete) ? addslashes($_delete) : 'Delete' ?> <?= htmlspecialchars($su) ?> ?')" style="display:inline;">
+              <?= csrf_field() ?>
+              <input type="hidden" name="delete_seller" value="<?= htmlspecialchars($su) ?>">
+              <button type="submit" class="btn bg-danger btn-sm" title="<?= isset($_delete) ? $_delete : 'Delete' ?>">
+                <i class="fa fa-trash"></i>
+              </button>
+            </form>
             <a href="#chgpass_<?= htmlspecialchars($su) ?>" class="btn bg-warning btn-sm" title="<?= $_password ?>">
               <i class="fa fa-key"></i>
             </a>
@@ -545,6 +799,49 @@ $adminDashboardUrl = $session !== '' ? './?session=' . urlencode($session) : './
       </tbody>
     </table>
     </div>
+
+    <!-- Formulaires édition compte vendeur -->
+    <?php foreach ($sellers_data as $su => $sd): ?>
+    <div class="modal-window" id="edit_seller_<?= htmlspecialchars($su) ?>" aria-hidden="true">
+      <div>
+        <header><h1><i class="fa fa-edit"></i> <?= isset($_edit) ? $_edit : 'Edit' ?> — <?= htmlspecialchars($su) ?></h1></header>
+        <a style="font-weight:bold;" href="#" title="<?= isset($_close) ? $_close : 'Close' ?>" class="modal-close">X</a>
+        <form autocomplete="off" method="post" action="?id=sellers&session=<?= urlencode($session) ?>">
+          <?= csrf_field() ?>
+          <table class="table">
+            <tr>
+              <td><?= $_seller_id ?> <small>(a-z, 0-9, _)</small></td>
+              <td>
+                <input type="hidden" name="edit_seller_user" value="<?= htmlspecialchars($su) ?>">
+                <input class="form-control" type="text" name="new_seller_user" value="<?= htmlspecialchars($su) ?>" required>
+              </td>
+            </tr>
+            <tr>
+              <td><?= $_seller_display_name ?></td>
+              <td><input class="form-control" type="text" name="new_seller_name" value="<?= htmlspecialchars(isset($sd['name']) ? $sd['name'] : '') ?>" required></td>
+            </tr>
+            <tr>
+              <td><?= $_password ?></td>
+              <td>
+                <input class="form-control" id="seller-edit-pass-<?= htmlspecialchars($su) ?>" type="password" name="new_seller_pass" placeholder="<?= isset($_keep_password) ? $_keep_password : 'Laisser vide pour conserver le mot de passe actuel' ?>">
+                <label style="display:inline-flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;cursor:pointer;">
+                  <input type="checkbox" onclick="msTogglePassword('seller-edit-pass-<?= htmlspecialchars($su) ?>', this)">
+                  <?= isset($_show_password) ? $_show_password : 'Afficher le mot de passe' ?>
+                </label>
+              </td>
+            </tr>
+            <tr>
+              <td colspan="2">
+                <button type="submit" name="update_seller_account" class="btn bg-primary">
+                  <i class="fa fa-save"></i> <?= $_save ?>
+                </button>
+              </td>
+            </tr>
+          </table>
+        </form>
+      </div>
+    </div>
+    <?php endforeach; ?>
 
     <!-- Formulaires changement de mot de passe -->
     <?php foreach ($sellers_data as $su => $sd): ?>
@@ -873,7 +1170,7 @@ $adminDashboardUrl = $session !== '' ? './?session=' . urlencode($session) : './
         <tr>
           <td class="align-middle"><?= $_seller_id ?> <small>(a-z, 0-9, _)</small></td>
           <td>
-            <input class="form-control" type="text" name="new_user"
+            <input class="form-control" type="text" name="new_user" id="seller-new-user"
                    pattern="[a-zA-Z0-9_]+" title="a-z, 0-9, _"
                    value="<?= htmlspecialchars($defaultSellerAccount['username']) ?>" required>
           </td>
@@ -890,7 +1187,7 @@ $adminDashboardUrl = $session !== '' ? './?session=' . urlencode($session) : './
         </tr>
         <tr>
           <td class="align-middle"><?= $_seller_display_name ?></td>
-          <td><input class="form-control" type="text" name="new_name" value="<?= htmlspecialchars($defaultSellerAccount['name']) ?>" required></td>
+          <td><input class="form-control" type="text" name="new_name" id="seller-new-name" value="<?= htmlspecialchars(mikhmon_account_label($defaultSellerAccount['username'])) ?>" readonly></td>
         </tr>
         <tr>
           <td class="align-middle"><?= $_seller_session_router ?></td>
@@ -967,11 +1264,16 @@ $adminDashboardUrl = $session !== '' ? './?session=' . urlencode($session) : './
                 </a>
               </td>
               <td>
-                <a href="?id=sellers&session=<?= $session ?>&tab=managers&del_manager=<?= urlencode($mu) ?>"
-                   onclick="return confirm('<?= isset($_delete) ? addslashes($_delete) : 'Delete' ?> <?= htmlspecialchars($mu) ?> ?')"
-                   class="btn bg-danger btn-sm" title="<?= isset($_delete) ? $_delete : 'Delete' ?>">
-                  <i class="fa fa-trash"></i>
+                <a href="#edit_manager_<?= htmlspecialchars($mu) ?>" class="btn bg-primary btn-sm" title="<?= isset($_edit) ? $_edit : 'Edit' ?>">
+                  <i class="fa fa-edit"></i>
                 </a>
+                <form method="post" action="?id=sellers&session=<?= urlencode($session) ?>&tab=managers" onsubmit="return confirm('<?= isset($_delete) ? addslashes($_delete) : 'Delete' ?> <?= htmlspecialchars($mu) ?> ?')" style="display:inline;">
+                  <?= csrf_field() ?>
+                  <input type="hidden" name="delete_manager" value="<?= htmlspecialchars($mu) ?>">
+                  <button type="submit" class="btn bg-danger btn-sm" title="<?= isset($_delete) ? $_delete : 'Delete' ?>">
+                    <i class="fa fa-trash"></i>
+                  </button>
+                </form>
                 <a href="#chgpass_mgr_<?= htmlspecialchars($mu) ?>" class="btn bg-warning btn-sm" title="<?= $_password ?>">
                   <i class="fa fa-key"></i>
                 </a>
@@ -981,6 +1283,49 @@ $adminDashboardUrl = $session !== '' ? './?session=' . urlencode($session) : './
           </tbody>
         </table>
         </div>
+
+        <!-- Modals édition compte gérant -->
+        <?php foreach ($managers_data as $mu => $md): ?>
+        <div class="modal-window" id="edit_manager_<?= htmlspecialchars($mu) ?>" aria-hidden="true">
+          <div>
+            <header><h1><i class="fa fa-edit"></i> <?= isset($_edit) ? $_edit : 'Edit' ?> — <?= htmlspecialchars($mu) ?></h1></header>
+            <a style="font-weight:bold;" href="#" title="<?= isset($_close) ? $_close : 'Close' ?>" class="modal-close">X</a>
+            <form autocomplete="off" method="post" action="?id=sellers&session=<?= urlencode($session) ?>&tab=managers">
+              <?= csrf_field() ?>
+              <table class="table">
+                <tr>
+                  <td><?= isset($_seller_id) ? $_seller_id : 'Identifier' ?> <small>(a-z, 0-9, _)</small></td>
+                  <td>
+                    <input type="hidden" name="edit_manager_user" value="<?= htmlspecialchars($mu) ?>">
+                    <input class="form-control" type="text" name="new_manager_user" value="<?= htmlspecialchars($mu) ?>" required>
+                  </td>
+                </tr>
+                <tr>
+                  <td><?= isset($_seller_display_name) ? $_seller_display_name : 'Display Name' ?></td>
+                  <td><input class="form-control" type="text" name="new_manager_name" value="<?= htmlspecialchars(isset($md['name']) ? $md['name'] : '') ?>" required></td>
+                </tr>
+                <tr>
+                  <td><?= $_password ?></td>
+                  <td>
+                    <input class="form-control" id="manager-edit-pass-<?= htmlspecialchars($mu) ?>" type="password" name="new_manager_pass" placeholder="<?= isset($_keep_password) ? $_keep_password : 'Laisser vide pour conserver le mot de passe actuel' ?>">
+                    <label style="display:inline-flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;cursor:pointer;">
+                      <input type="checkbox" onclick="msTogglePassword('manager-edit-pass-<?= htmlspecialchars($mu) ?>', this)">
+                      <?= isset($_show_password) ? $_show_password : 'Afficher le mot de passe' ?>
+                    </label>
+                  </td>
+                </tr>
+                <tr>
+                  <td colspan="2">
+                    <button type="submit" name="update_manager_account" class="btn bg-primary">
+                      <i class="fa fa-save"></i> <?= $_save ?>
+                    </button>
+                  </td>
+                </tr>
+              </table>
+            </form>
+          </div>
+        </div>
+        <?php endforeach; ?>
 
         <!-- Modals changement mot de passe gérant -->
         <?php foreach ($managers_data as $mu => $md): ?>
@@ -1033,7 +1378,7 @@ $adminDashboardUrl = $session !== '' ? './?session=' . urlencode($session) : './
           <table class="table">
             <tr>
               <td class="align-middle"><?= isset($_seller_id) ? $_seller_id : 'Identifier' ?> <small>(a-z, 0-9, _)</small></td>
-              <td><input class="form-control" type="text" name="nm_user" pattern="[a-zA-Z0-9_]+" value="<?= htmlspecialchars($defaultManagerAccount['username']) ?>" required></td>
+              <td><input class="form-control" type="text" name="nm_user" id="manager-new-user" pattern="[a-zA-Z0-9_]+" value="<?= htmlspecialchars($defaultManagerAccount['username']) ?>" required></td>
             </tr>
             <tr>
               <td class="align-middle"><?= $_password ?></td>
@@ -1047,7 +1392,7 @@ $adminDashboardUrl = $session !== '' ? './?session=' . urlencode($session) : './
             </tr>
             <tr>
               <td class="align-middle"><?= isset($_seller_display_name) ? $_seller_display_name : 'Display Name' ?></td>
-              <td><input class="form-control" type="text" name="nm_name" value="<?= htmlspecialchars($defaultManagerAccount['name']) ?>" required></td>
+              <td><input class="form-control" type="text" name="nm_name" id="manager-new-name" value="<?= htmlspecialchars(mikhmon_account_label($defaultManagerAccount['username'])) ?>" readonly></td>
             </tr>
             <tr>
               <td class="align-middle"><?= isset($_seller_session_router) ? $_seller_session_router : 'Session' ?></td>
@@ -1078,6 +1423,314 @@ $adminDashboardUrl = $session !== '' ? './?session=' . urlencode($session) : './
 </div><!-- card gérants -->
 
 </div><!-- /ms-section-managers -->
+
+<!-- ── Section Comptabilité ── -->
+<div id="ms-section-accounting" class="ms-tab-section<?= $active_tab==='accounting' ? ' ms-active' : '' ?>">
+
+<?php
+  $adminAcctTotal = $adminAccountingSummary['total'];
+  $adminAcctSellerLabel = $adminAccountingSeller !== '' && isset($adminAccountingSellersData[$adminAccountingSeller])
+    ? $adminAccountingSellersData[$adminAccountingSeller]['name']
+    : 'Tous les vendeurs';
+  $adminAccountingYear = substr($adminAccountingMonthKey, 3, 4);
+?>
+
+<div class="card box-bordered" style="margin-bottom:15px;">
+  <div class="card-header">
+    <h4 style="margin:0;"><i class="fa fa-calculator"></i> Comptabilité par vendeur</h4>
+  </div>
+  <div class="card-body">
+    <div class="portal-note-card" style="margin-bottom:16px;text-align:left;">
+      <b><i class="fa fa-stop-circle"></i> Arrêt de période</b><br>
+      Sélectionnez une période, arrêtez les comptes avec chaque vendeur, puis repartez du lendemain pour ne pas mélanger les montants déjà réglés.
+    </div>
+
+    <div style="margin-bottom:16px;">
+      <div class="mgr-month-filter">
+        <?php foreach (mikhmon_month_map() as $monthNumber => $monthSlug):
+          $monthTag = $monthSlug . $adminAccountingYear;
+          $monthActive = ($adminAccountingMonthKey === $monthTag) ? 'bg-primary' : '';
+        ?>
+          <a href="./admin.php?id=sellers&session=<?= urlencode($session) ?>&tab=accounting&acct_month=<?= urlencode($monthTag) ?>"
+             class="btn btn-sm <?= $monthActive ?>" style="padding:4px 10px;">
+            <?= ucfirst($monthSlug) ?>
+          </a>
+        <?php endforeach; ?>
+      </div>
+    </div>
+
+    <form method="get" action="./admin.php" class="portal-card-section" style="margin-bottom:18px;">
+      <input type="hidden" name="id" value="sellers">
+      <input type="hidden" name="session" value="<?= htmlspecialchars($session) ?>">
+      <input type="hidden" name="tab" value="accounting">
+      <input type="hidden" name="acct_month" value="<?= htmlspecialchars($adminAccountingMonthKey) ?>">
+      <div class="portal-filter-grid">
+        <div class="portal-filter-item">
+          <label class="transfer-label"><i class="fa fa-calendar-o"></i> Début</label>
+          <input type="date" name="acct_from" class="form-control" value="<?= htmlspecialchars($adminAccountingFrom) ?>">
+        </div>
+        <div class="portal-filter-item">
+          <label class="transfer-label"><i class="fa fa-calendar-check-o"></i> Arrêt</label>
+          <input type="date" name="acct_to" class="form-control" value="<?= htmlspecialchars($adminAccountingTo) ?>">
+        </div>
+        <div class="portal-filter-item">
+          <label class="transfer-label"><i class="fa fa-user"></i> Vendeur</label>
+          <select name="acct_seller" class="form-control">
+            <option value="">Tous les vendeurs</option>
+            <?php foreach ($adminAccountingSellersData as $sk => $sd): ?>
+              <option value="<?= htmlspecialchars($sk) ?>" <?= $adminAccountingSeller === $sk ? 'selected' : '' ?>>
+                <?= htmlspecialchars($sd['name']) ?>
+              </option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+        <div class="portal-filter-item">
+          <label class="transfer-label"><i class="fa fa-clock-o"></i> Heure du compte</label>
+          <input type="time" name="acct_settled_at" class="form-control" step="60" value="<?= htmlspecialchars(substr($adminAccountingSettlementTime, 0, 5)) ?>">
+        </div>
+        <div class="portal-filter-item">
+          <label class="transfer-label"><i class="fa fa-clock-o"></i> Heure du prochain compte</label>
+          <input type="time" name="acct_next_settled_at" class="form-control" step="60" value="<?= htmlspecialchars(substr($adminAccountingNextSettlementTime, 0, 5)) ?>">
+        </div>
+      </div>
+      <button type="submit" class="btn bg-primary" style="margin-top:8px;">
+        <i class="fa fa-filter"></i> Afficher les comptes
+      </button>
+      <a class="btn" style="margin-top:8px;background:#eee;color:#333;" href="<?= $adminAccountingBaseUrl ?>">
+        <i class="fa fa-refresh"></i> Mois complet
+      </a>
+    </form>
+
+    <?php if (!$API_ms_connected): ?>
+      <div class="bg-warning" style="padding:10px 14px;border-radius:5px;margin-bottom:14px;">
+        <i class="fa fa-warning"></i> Impossible de lire les ventes du routeur pour cette session. Vérifiez la connexion MikroTik.
+      </div>
+    <?php endif; ?>
+
+    <div class="admin-accounting-cards">
+      <div class="admin-accounting-card" style="background:#eaf4fb;border-left:4px solid #2980b9;">
+        <div class="admin-accounting-card-label" style="color:#2980b9;"><i class="fa fa-calendar"></i> Période arrêtée</div>
+        <div class="admin-accounting-card-value" style="font-size:18px;color:#2980b9;"><?= htmlspecialchars($adminAccountingFrom) ?> &rarr; <?= htmlspecialchars($adminAccountingTo) ?></div>
+        <div style="font-size:12px;color:#1a6fa0;"><?= htmlspecialchars($adminAcctSellerLabel) ?></div>
+      </div>
+      <div class="admin-accounting-card" style="background:#f3e8fd;border-left:4px solid #8e44ad;">
+        <div class="admin-accounting-card-label" style="color:#8e44ad;"><i class="fa fa-ticket"></i> Tickets</div>
+        <div class="admin-accounting-card-value" style="color:#8e44ad;"><?= (int)$adminAcctTotal['count'] ?></div>
+      </div>
+      <div class="admin-accounting-card" style="background:#e8f8f5;border-left:4px solid #27ae60;">
+        <div class="admin-accounting-card-label" style="color:#27ae60;"><i class="fa fa-money"></i> Total encaissé</div>
+        <div class="admin-accounting-card-value" style="color:#27ae60;"><?= mikhmon_format_money_amount($adminAcctTotal['revenue'], $currency, $cekindo) ?></div>
+      </div>
+      <div class="admin-accounting-card" style="background:#fff8e1;border-left:4px solid #e67e22;">
+        <div class="admin-accounting-card-label" style="color:#e67e22;"><i class="fa fa-percent"></i> Commissions</div>
+        <div class="admin-accounting-card-value" style="color:#e67e22;"><?= mikhmon_format_money_amount($adminAcctTotal['commission'], $currency, $cekindo) ?></div>
+      </div>
+      <div class="admin-accounting-card" style="background:#fdeef7;border-left:4px solid #c0398f;">
+        <div class="admin-accounting-card-label" style="color:#c0398f;"><i class="fa fa-bank"></i> Net à remettre</div>
+        <div class="admin-accounting-card-value" style="color:#c0398f;"><?= mikhmon_format_money_amount($adminAcctTotal['net'], $currency, $cekindo) ?></div>
+      </div>
+      <div class="admin-accounting-card" style="background:#eef2f7;border-left:4px solid #34495e;">
+        <div class="admin-accounting-card-label" style="color:#34495e;"><i class="fa fa-clock-o"></i> Heure du compte</div>
+        <div class="admin-accounting-card-value" style="color:#34495e;"><?= htmlspecialchars($adminAccountingSettlementTime) ?></div>
+      </div>
+    </div>
+
+    <?php if ($adminAccountingNextFrom !== ''): ?>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+        <a class="btn" style="background:#5b2c8d;color:#fff;" href="<?= $adminAccountingBaseUrl ?>&acct_from=<?= urlencode($adminAccountingNextFrom) ?>&acct_to=<?= urlencode($adminAccountingNextFrom) ?>&acct_settled_at=<?= urlencode($adminAccountingNextSettlementTime) ?>&acct_next_settled_at=<?= urlencode($adminAccountingNextSettlementTime) ?><?= $adminAccountingSeller !== '' ? '&acct_seller=' . urlencode($adminAccountingSeller) : '' ?>">
+          <i class="fa fa-step-forward"></i> Jour suivant : <?= htmlspecialchars($adminAccountingNextFrom) ?>
+        </a>
+        <a class="btn" style="background:#34495e;color:#fff;" href="<?= $adminAccountingBaseUrl ?>&acct_from=<?= urlencode($adminAccountingNextFrom) ?>&acct_to=<?= urlencode($adminAccountingNextTo) ?>&acct_settled_at=<?= urlencode($adminAccountingNextSettlementTime) ?>&acct_next_settled_at=<?= urlencode($adminAccountingNextSettlementTime) ?><?= $adminAccountingSeller !== '' ? '&acct_seller=' . urlencode($adminAccountingSeller) : '' ?>">
+          <i class="fa fa-calendar-plus-o"></i> Reste du mois
+        </a>
+      </div>
+    <?php endif; ?>
+
+    <?php
+      $adminAccountingNoticeSampleName = 'vendeur';
+      if (!empty($adminAccountingNoticeTargets) && isset($adminAccountingSellersData[$adminAccountingNoticeTargets[0]]['name'])) {
+        $adminAccountingNoticeSampleName = $adminAccountingSellersData[$adminAccountingNoticeTargets[0]]['name'];
+      } elseif ($adminAccountingSeller !== '' && isset($adminAccountingSellersData[$adminAccountingSeller]['name'])) {
+        $adminAccountingNoticeSampleName = $adminAccountingSellersData[$adminAccountingSeller]['name'];
+      }
+      $adminAccountingNoticePreview = mikhmon_accounting_notification_text($adminAccountingNoticeSampleName, $adminAccountingFrom, $adminAccountingTo, $adminAccountingSettlementTime, $adminAccountingNextFrom, $adminAccountingNextTo, $adminAccountingNextSettlementTime);
+    ?>
+    <div class="accounting-notice-box">
+      <b><i class="fa fa-bell"></i> Notification aux vendeurs</b>
+      <div style="font-size:12px;color:#64748b;margin-top:4px;">
+        Cibles : <?= count($adminAccountingNoticeTargets) ?> vendeur(s) concerné(s) par cette période.
+      </div>
+      <?php if ($adminAccountingNoticeMsg !== ''): ?>
+        <div class="bg-success" style="padding:8px 10px;border-radius:5px;margin-top:10px;"><i class="fa fa-check"></i> <?= htmlspecialchars($adminAccountingNoticeMsg) ?></div>
+      <?php endif; ?>
+      <?php if ($adminAccountingNoticeError !== ''): ?>
+        <div class="bg-warning" style="padding:8px 10px;border-radius:5px;margin-top:10px;"><i class="fa fa-warning"></i> <?= htmlspecialchars($adminAccountingNoticeError) ?></div>
+      <?php endif; ?>
+      <div class="accounting-notice-preview"><?= htmlspecialchars($adminAccountingNoticePreview) ?></div>
+      <form method="post" action="<?= $adminAccountingBaseUrl ?>&acct_from=<?= urlencode($adminAccountingFrom) ?>&acct_to=<?= urlencode($adminAccountingTo) ?>&acct_settled_at=<?= urlencode($adminAccountingSettlementTime) ?>&acct_next_settled_at=<?= urlencode($adminAccountingNextSettlementTime) ?><?= $adminAccountingSeller !== '' ? '&acct_seller=' . urlencode($adminAccountingSeller) : '' ?>" style="margin:0;">
+        <?= csrf_field() ?>
+        <input type="hidden" name="acct_settled_at" value="<?= htmlspecialchars($adminAccountingSettlementTime) ?>">
+        <input type="hidden" name="acct_next_settled_at" value="<?= htmlspecialchars($adminAccountingNextSettlementTime) ?>">
+        <button type="submit" name="admin_send_accounting_notice" class="btn" style="background:#34495e;color:#fff;">
+          <i class="fa fa-paper-plane"></i> Notifier les vendeurs
+        </button>
+      </form>
+    </div>
+
+    <?php
+      /* ── Historique des notifications comptables ── */
+      $acctNotifHistory = mikhmon_accounting_notifications_load();
+      // Filter for current session
+      $acctNotifHistory = array_values(array_filter($acctNotifHistory, function($n) use ($session) {
+          return ($n['session'] ?? '') === $session;
+      }));
+      // Most recent first
+      usort($acctNotifHistory, function($a, $b) {
+          return strcmp($b['created_at'] ?? '', $a['created_at'] ?? '');
+      });
+    ?>
+    <?php if (!empty($acctNotifHistory)): ?>
+    <div class="card box-bordered" id="acct-notif-history-card" style="margin-bottom:18px;border-left:4px solid #8e44ad;">
+      <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;background:#faf5ff;">
+        <h4 style="margin:0;color:#6c3483;"><i class="fa fa-history"></i> Historique des comptes notifiés <small style="color:#999;">(<?= count($acctNotifHistory) ?>)</small></h4>
+        <button class="btn btn-sm bg-danger" id="acct-notif-clear-btn"
+                onclick="clearAllNotifications(this, <?= json_encode($session) ?>)"
+                title="Supprimer tout l'historique pour cette session">
+          <i class="fa fa-trash"></i> Tout effacer
+        </button>
+      </div>
+      <div class="card-body" style="padding:0;">
+        <div class="table-responsive">
+        <table class="table table-bordered" style="margin:0;font-size:13px;">
+          <thead class="thead-light">
+            <tr>
+              <th>Vendeur</th>
+              <th>Période</th>
+              <th>Message</th>
+              <th class="text-center">Date envoi</th>
+              <th class="text-center">Action</th>
+            </tr>
+          </thead>
+          <tbody id="acct-notif-tbody">
+          <?php foreach ($acctNotifHistory as $notif): ?>
+            <tr id="acct-notif-row-<?= htmlspecialchars($notif['id'] ?? '') ?>">
+              <td><b><?= htmlspecialchars($notif['seller_name'] ?? $notif['seller'] ?? '—') ?></b><br><small style="color:#888;"><code><?= htmlspecialchars($notif['seller'] ?? '') ?></code></small></td>
+              <td style="white-space:nowrap;">
+                <span style="display:inline-block;padding:2px 7px;border-radius:10px;background:#ede9fe;color:#6c3483;font-size:12px;">
+                  <?= htmlspecialchars($notif['from'] ?? '') ?> → <?= htmlspecialchars($notif['to'] ?? '') ?>
+                </span>
+              </td>
+              <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="<?= htmlspecialchars($notif['message'] ?? '') ?>">
+                <?= htmlspecialchars(mb_substr($notif['message'] ?? '', 0, 80)) ?>…
+              </td>
+              <td class="text-center" style="white-space:nowrap;color:#888;font-size:12px;"><?= htmlspecialchars(substr($notif['created_at'] ?? '', 0, 16)) ?></td>
+              <td class="text-center">
+                <button class="btn btn-sm bg-danger"
+                        onclick="deleteNotification(<?= json_encode($notif['id'] ?? '') ?>, this)"
+                        title="Supprimer cette notification de l'historique">
+                  <i class="fa fa-times"></i>
+                </button>
+              </td>
+            </tr>
+          <?php endforeach; ?>
+          </tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+    <?php endif; ?>
+
+    <?php if (empty($adminAccountingSummary['days'])): ?>
+      <p class="text-center portal-empty-note" style="padding:20px;margin:0;">
+        <i class="fa fa-info-circle"></i> Aucune période valide.
+      </p>
+    <?php else: ?>
+      <?php foreach ($adminAccountingSummary['days'] as $dayKey => $day): ?>
+      <div class="card box-bordered" style="margin-bottom:14px;border-left:4px solid <?= $day['total']['count'] > 0 ? '#27ae60' : '#cbd5e1' ?>;">
+        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;background:#fafafa;">
+          <h4 style="margin:0;color:#243447;">
+            <i class="fa fa-calendar"></i> <?= htmlspecialchars($day['iso']) ?>
+            <small style="color:#888;">(<?= htmlspecialchars($dayKey) ?>)</small>
+          </h4>
+          <div style="font-size:13px;color:#555;">
+            <b><?= (int)$day['total']['count'] ?></b> vcr &middot;
+            <b><?= mikhmon_format_money_amount($day['total']['revenue'], $currency, $cekindo) ?></b> &middot;
+            Commission <?= mikhmon_format_money_amount($day['total']['commission'], $currency, $cekindo) ?> &middot;
+            Net <?= mikhmon_format_money_amount($day['total']['net'], $currency, $cekindo) ?> &middot;
+            <span class="accounting-settlement-chip"><i class="fa fa-clock-o"></i> <?= htmlspecialchars($adminAccountingSettlementTime) ?></span>
+          </div>
+          <?php if ((int)$day['total']['count'] > 0): ?>
+          <button class="btn btn-sm bg-danger acct-del-day-btn"
+                  onclick="deleteDaySales(<?= json_encode($day['iso']) ?>, <?= json_encode($adminAccountingMonthKey ?? '') ?>, this)"
+                  title="Supprimer toutes les ventes de ce jour sur MikroTik"
+                  style="white-space:nowrap;">
+            <i class="fa fa-trash"></i> Supprimer les ventes
+          </button>
+          <?php endif; ?>
+        </div>
+        <div class="card-body">
+          <?php if (empty($day['sellers'])): ?>
+            <p class="text-center portal-empty-note" style="margin:0;padding:8px;">
+              <i class="fa fa-info-circle"></i> Aucun compte à régler pour cette journée.
+              <span class="accounting-settlement-chip"><i class="fa fa-clock-o"></i> Heure du compte : <?= htmlspecialchars($adminAccountingSettlementTime) ?></span>
+            </p>
+          <?php else: ?>
+          <div class="table-responsive portal-table-wrap">
+          <table class="table table-bordered portal-table-min-md accounting-responsive-table">
+            <thead class="thead-light">
+              <tr>
+                <th><?= isset($_seller) ? $_seller : 'Vendeur' ?></th>
+                <th class="text-center">Heure du compte</th>
+                <th>Profils vendus</th>
+                <th class="text-center">Tickets</th>
+                <th class="text-center">Total encaissé</th>
+                <th class="text-center">Commission</th>
+                <th class="text-center">Net à remettre</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php foreach ($day['sellers'] as $sellerRow): ?>
+              <tr>
+                <td class="accounting-seller-cell" data-label="<?= isset($_seller) ? $_seller : 'Vendeur' ?>">
+                  <b><?= htmlspecialchars($sellerRow['name']) ?></b><br>
+                  <small style="color:#888;"><code><?= htmlspecialchars($sellerRow['key']) ?></code> &middot; <?= (int)$sellerRow['commission_rate'] ?>%</small>
+                  <span class="accounting-settlement-chip accounting-mobile-settlement"><i class="fa fa-clock-o"></i> Heure du compte : <?= htmlspecialchars($adminAccountingSettlementTime) ?></span>
+                </td>
+                <td class="text-center accounting-time-cell" data-label="Heure du compte"><span class="accounting-settlement-chip"><i class="fa fa-clock-o"></i> <?= htmlspecialchars($adminAccountingSettlementTime) ?></span></td>
+                <td data-label="Profils vendus">
+                  <?php foreach ($sellerRow['profiles'] as $profileName => $profileTotal): ?>
+                    <span style="display:inline-block;margin:2px 4px 2px 0;padding:2px 8px;border-radius:12px;background:#eef2f7;color:#243447;font-size:12px;">
+                      <?= htmlspecialchars($profileName) ?>: <?= (int)$profileTotal['count'] ?>
+                    </span>
+                  <?php endforeach; ?>
+                </td>
+                <td class="text-center" data-label="Tickets"><?= (int)$sellerRow['count'] ?></td>
+                <td class="text-center" data-label="Total encaissé"><?= mikhmon_format_money_amount($sellerRow['revenue'], $currency, $cekindo) ?></td>
+                <td class="text-center" data-label="Commission" style="color:#e67e22;font-weight:bold;"><?= mikhmon_format_money_amount($sellerRow['commission'], $currency, $cekindo) ?></td>
+                <td class="text-center" data-label="Net à remettre" style="color:#c0398f;font-weight:bold;"><?= mikhmon_format_money_amount($sellerRow['net'], $currency, $cekindo) ?></td>
+              </tr>
+              <?php endforeach; ?>
+            </tbody>
+            <tfoot>
+              <tr class="acct-total-row">
+                <td colspan="3" data-label="Arrêt"><i class="fa fa-stop-circle"></i> Arrêt du jour &middot; <?= htmlspecialchars($adminAccountingSettlementTime) ?></td>
+                <td class="text-center" data-label="Tickets"><?= (int)$day['total']['count'] ?></td>
+                <td class="text-center" data-label="Total encaissé"><?= mikhmon_format_money_amount($day['total']['revenue'], $currency, $cekindo) ?></td>
+                <td class="text-center" data-label="Commission"><?= mikhmon_format_money_amount($day['total']['commission'], $currency, $cekindo) ?></td>
+                <td class="text-center" data-label="Net à remettre"><?= mikhmon_format_money_amount($day['total']['net'], $currency, $cekindo) ?></td>
+              </tr>
+            </tfoot>
+          </table>
+          </div>
+          <?php endif; ?>
+        </div>
+      </div>
+      <?php endforeach; ?>
+    <?php endif; ?>
+  </div>
+</div>
+
+</div><!-- /ms-section-accounting -->
 
 <!-- ── Section Transferts ── -->
 <div id="ms-section-transfers" class="ms-tab-section<?= $active_tab==='transfers' ? ' ms-active' : '' ?>">
@@ -1278,8 +1931,39 @@ function msTogglePassword(fieldId, checkbox) {
   input.type = checkbox && checkbox.checked ? 'text' : 'password';
 }
 
+function msAccountLabel(value) {
+  value = (value || '').replace(/[^a-zA-Z0-9_]/g, '');
+  if (!value) return '';
+  return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+}
+
+function msBindAccountAutoName(userId, nameId) {
+  var user = document.getElementById(userId);
+  var name = document.getElementById(nameId);
+  if (!user || !name) return;
+
+  function sync() {
+    var label = msAccountLabel(user.value);
+    name.value = label;
+  }
+
+  user.addEventListener('input', sync);
+  user.addEventListener('blur', sync);
+  sync();
+}
+
+msBindAccountAutoName('seller-new-user', 'seller-new-name');
+msBindAccountAutoName('manager-new-user', 'manager-new-name');
+
 function msTab(tab) {
-  var sections = ['sellers','managers','transfers'];
+  var url = new URL(window.location.href);
+  url.searchParams.set('tab', tab);
+  if (tab === 'accounting' && url.toString() !== window.location.href) {
+    window.location.href = url.toString();
+    return;
+  }
+
+  var sections = ['sellers','managers','accounting','transfers'];
   sections.forEach(function(t){
     var sec = document.getElementById('ms-section-'+t);
     var btn = document.getElementById('mstab-'+t);
@@ -1293,9 +1977,76 @@ function msTab(tab) {
     }
   });
   // Update URL without reload
-  var url = new URL(window.location.href);
-  url.searchParams.set('tab', tab);
   history.replaceState(null, '', url.toString());
+}
+
+/* ══════════════════════════════════════════════
+   Comptabilité — actions AJAX
+   ══════════════════════════════════════════════ */
+
+function _acctPost(data, btn, onOk) {
+  var orig = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i>'; }
+  var fd = new FormData();
+  Object.keys(data).forEach(function(k){ fd.append(k, data[k]); });
+  fetch('./process/accounting_action.php', { method: 'POST', body: fd })
+    .then(function(r){ return r.json(); })
+    .then(function(res){
+      if (res.ok) {
+        onOk(res);
+      } else {
+        alert('Erreur : ' + (res.error || 'inconnue'));
+        if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+      }
+    })
+    .catch(function(e){
+      alert('Erreur réseau : ' + e);
+      if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+    });
+}
+
+/* Supprimer une notification de l'historique */
+function deleteNotification(notifId, btn) {
+  if (!confirm('Supprimer cette notification de l\'historique ?')) return;
+  _acctPost({ action: 'delete_notification', notif_id: notifId }, btn, function(res) {
+    var row = document.getElementById('acct-notif-row-' + notifId);
+    if (row) row.remove();
+    // Si le tableau est vide, masquer la carte
+    var tbody = document.getElementById('acct-notif-tbody');
+    if (tbody && tbody.querySelectorAll('tr').length === 0) {
+      var card = document.getElementById('acct-notif-history-card');
+      if (card) card.style.display = 'none';
+    }
+  });
+}
+
+/* Effacer tout l'historique de notifications pour la session */
+function clearAllNotifications(btn, sessionKey) {
+  if (!confirm('Effacer tout l\'historique des comptes notifiés pour cette session ?')) return;
+  _acctPost({ action: 'clear_notifications', session: sessionKey }, btn, function(res) {
+    var card = document.getElementById('acct-notif-history-card');
+    if (card) card.style.display = 'none';
+  });
+}
+
+/* Supprimer les ventes d'un jour depuis MikroTik */
+function deleteDaySales(isoDate, monthKey, btn) {
+  if (!confirm('Supprimer TOUTES les ventes du ' + isoDate + ' sur MikroTik ?\n\nCette action est irréversible.')) return;
+  _acctPost({ action: 'delete_day_sales', iso_date: isoDate, month_key: monthKey }, btn, function(res) {
+    var msg = 'Supprimé : ' + res.deleted + ' script(s)';
+    if (res.errors && res.errors.length > 0) msg += '\nErreurs : ' + res.errors.join(', ');
+    alert(msg);
+    // Griser la carte du jour pour indiquer qu'elle est vide
+    if (btn) {
+      var card = btn.closest('.card');
+      if (card) {
+        card.style.opacity = '0.45';
+        card.style.borderLeftColor = '#cbd5e1';
+      }
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa fa-check"></i> Supprimé';
+    }
+  });
 }
 </script>
 

@@ -10,6 +10,9 @@ docs/
 !docs/
 !docs/SAFELINKHUB_MAMP_GUIDE.md
 logs/*.jsonl
+logs/*.json
+logs/*.txt
+include/secret.key.php
 wireguard-configs/
 
 *.tar

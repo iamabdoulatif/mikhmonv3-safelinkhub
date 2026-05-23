@@ -6,4 +6,3 @@ if (isset($_SERVER["REQUEST_URI"]) && substr($_SERVER["REQUEST_URI"], -19) == "s
 // Comptes vendeurs - gérés par l'administrateur
 // Format: $sellers_data['username'] = array('password' => encrypt('motdepasse'), 'name' => 'Nom Affiché', 'session' => 'NomSession');
 $sellers_data = array();
-$sellers_data['badra'] = array('password' => 'aWNlbA==', 'name' => 'vendeur1', 'session' => 'BRN-TECH', 'commission' => 10);

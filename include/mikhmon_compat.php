@@ -244,6 +244,335 @@ if (!function_exists('mikhmon_month_map')) {
     return trim((string) $currency . ' ' . number_format($amount, 2, '.', ','));
   }
 
+  function mikhmon_accounting_month_bounds($monthKey)
+  {
+    $monthKey = strtolower(trim((string) $monthKey));
+    if (!preg_match('/^([a-z]{3})(\d{4})$/', $monthKey, $matches)) {
+      return array('from' => date('Y-m-01'), 'to' => date('Y-m-t'));
+    }
+
+    $months = array_flip(mikhmon_month_map());
+    if (!isset($months[$matches[1]])) {
+      return array('from' => date('Y-m-01'), 'to' => date('Y-m-t'));
+    }
+
+    $year = (int) $matches[2];
+    $month = $months[$matches[1]];
+    $monthStart = DateTime::createFromFormat('!Y-n-j', $year . '-' . (int) $month . '-1');
+    if (!$monthStart) {
+      return array('from' => date('Y-m-01'), 'to' => date('Y-m-t'));
+    }
+    $days = (int) $monthStart->format('t');
+
+    return array(
+      'from' => sprintf('%04d-%02d-01', $year, (int) $month),
+      'to' => sprintf('%04d-%02d-%02d', $year, (int) $month, $days),
+    );
+  }
+
+  function mikhmon_accounting_iso_date($date, $fallback = '')
+  {
+    $date = trim((string) $date);
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+      return $date;
+    }
+
+    $iso = mikhmon_iso_date_from_day_key($date);
+    if ($iso !== '') {
+      return $iso;
+    }
+
+    return $fallback;
+  }
+
+  function mikhmon_accounting_settlement_time($time, $fallback = '')
+  {
+    $time = trim((string) $time);
+    if (preg_match('/^\d{2}:\d{2}$/', $time)) {
+      $time .= ':00';
+    }
+    if (preg_match('/^\d{2}:\d{2}:\d{2}$/', $time)) {
+      return $time;
+    }
+
+    $fallback = trim((string) $fallback);
+    if (preg_match('/^\d{2}:\d{2}$/', $fallback)) {
+      return $fallback . ':00';
+    }
+    if (preg_match('/^\d{2}:\d{2}:\d{2}$/', $fallback)) {
+      return $fallback;
+    }
+
+    return date('H:i:s');
+  }
+
+  function mikhmon_accounting_day_keys_between($fromIso, $toIso)
+  {
+    $fromIso = mikhmon_accounting_iso_date($fromIso);
+    $toIso = mikhmon_accounting_iso_date($toIso, $fromIso);
+    if ($fromIso === '' || $toIso === '') {
+      return array();
+    }
+    if ($fromIso > $toIso) {
+      $tmp = $fromIso;
+      $fromIso = $toIso;
+      $toIso = $tmp;
+    }
+
+    $days = array();
+    $cursor = new DateTime($fromIso);
+    $end = new DateTime($toIso);
+    $months = mikhmon_month_map();
+
+    while ($cursor <= $end) {
+      $days[] = array(
+        'iso' => $cursor->format('Y-m-d'),
+        'key' => $months[$cursor->format('m')] . '/' . $cursor->format('d') . '/' . $cursor->format('Y'),
+      );
+      $cursor->modify('+1 day');
+    }
+
+    return $days;
+  }
+
+  function mikhmon_accounting_blank_total()
+  {
+    return array('count' => 0, 'revenue' => 0.0, 'commission' => 0.0, 'net' => 0.0);
+  }
+
+  function mikhmon_accounting_seller_key($comment, $sellersData)
+  {
+    $comment = strtolower(trim((string) $comment));
+    if ($comment === '' || !is_array($sellersData)) {
+      return '';
+    }
+
+    foreach ($sellersData as $sellerKey => $sellerData) {
+      $sellerKey = trim((string) $sellerKey);
+      if ($sellerKey === '') {
+        continue;
+      }
+      $normalizedSeller = strtolower($sellerKey);
+      $suffix = '-' . $normalizedSeller;
+      if ($comment === $normalizedSeller || substr($comment, -strlen($suffix)) === $suffix) {
+        return $sellerKey;
+      }
+    }
+
+    return '';
+  }
+
+  function mikhmon_accounting_add_amount(&$bucket, $amount, $commission)
+  {
+    $amount = (float) $amount;
+    $commission = (float) $commission;
+    $bucket['count']++;
+    $bucket['revenue'] += $amount;
+    $bucket['commission'] += $commission;
+    $bucket['net'] += ($amount - $commission);
+  }
+
+  function mikhmon_accounting_period_summary($sales, $sellersData, $fromIso, $toIso, $sellerFilter = '')
+  {
+    $fromIso = mikhmon_accounting_iso_date($fromIso);
+    $toIso = mikhmon_accounting_iso_date($toIso, $fromIso);
+    if ($fromIso === '' || $toIso === '') {
+      return array('from' => '', 'to' => '', 'days' => array(), 'total' => mikhmon_accounting_blank_total());
+    }
+    if ($fromIso > $toIso) {
+      $tmp = $fromIso;
+      $fromIso = $toIso;
+      $toIso = $tmp;
+    }
+
+    $sellerFilter = preg_replace('/[^a-zA-Z0-9_]/', '', (string) $sellerFilter);
+    $summary = array(
+      'from' => $fromIso,
+      'to' => $toIso,
+      'days' => array(),
+      'total' => mikhmon_accounting_blank_total(),
+    );
+
+    foreach (mikhmon_accounting_day_keys_between($fromIso, $toIso) as $day) {
+      $summary['days'][$day['key']] = array(
+        'date' => $day['key'],
+        'iso' => $day['iso'],
+        'sellers' => array(),
+        'total' => mikhmon_accounting_blank_total(),
+      );
+    }
+
+    foreach (mikhmon_unique_sale_scripts($sales) as $script) {
+      $sale = (isset($script['date']) && isset($script['price'])) ? $script : mikhmon_parse_sale_script($script);
+      $saleIso = mikhmon_accounting_iso_date(isset($sale['date']) ? $sale['date'] : '');
+      if ($saleIso === '' || $saleIso < $fromIso || $saleIso > $toIso) {
+        continue;
+      }
+
+      $sellerKey = mikhmon_accounting_seller_key(isset($sale['comment']) ? $sale['comment'] : '', $sellersData);
+      if ($sellerKey === '' || !isset($sellersData[$sellerKey])) {
+        continue;
+      }
+      if ($sellerFilter !== '' && $sellerKey !== $sellerFilter) {
+        continue;
+      }
+
+      $dayKey = mikhmon_normalize_sale_date(isset($sale['date']) ? $sale['date'] : '');
+      if (!isset($summary['days'][$dayKey])) {
+        continue;
+      }
+
+      $amount = mikhmon_parse_money_amount(isset($sale['price']) ? $sale['price'] : 0);
+      $rate = isset($sellersData[$sellerKey]['commission']) ? (int) $sellersData[$sellerKey]['commission'] : 0;
+      $commission = $amount * $rate / 100;
+      $sellerName = isset($sellersData[$sellerKey]['name']) ? $sellersData[$sellerKey]['name'] : $sellerKey;
+
+      if (!isset($summary['days'][$dayKey]['sellers'][$sellerKey])) {
+        $summary['days'][$dayKey]['sellers'][$sellerKey] = array(
+          'key' => $sellerKey,
+          'name' => $sellerName,
+          'commission_rate' => $rate,
+          'profiles' => array(),
+        ) + mikhmon_accounting_blank_total();
+      }
+
+      $profile = isset($sale['profile']) && trim((string) $sale['profile']) !== '' ? trim((string) $sale['profile']) : '-';
+      if (!isset($summary['days'][$dayKey]['sellers'][$sellerKey]['profiles'][$profile])) {
+        $summary['days'][$dayKey]['sellers'][$sellerKey]['profiles'][$profile] = mikhmon_accounting_blank_total();
+      }
+
+      mikhmon_accounting_add_amount($summary['days'][$dayKey]['sellers'][$sellerKey], $amount, $commission);
+      mikhmon_accounting_add_amount($summary['days'][$dayKey]['sellers'][$sellerKey]['profiles'][$profile], $amount, $commission);
+      mikhmon_accounting_add_amount($summary['days'][$dayKey]['total'], $amount, $commission);
+      mikhmon_accounting_add_amount($summary['total'], $amount, $commission);
+    }
+
+    return $summary;
+  }
+
+  function mikhmon_php_literal($value)
+  {
+    if (is_array($value)) {
+      $parts = array();
+      foreach ($value as $key => $item) {
+        $parts[] = mikhmon_php_literal($key) . '=>' . mikhmon_php_literal($item);
+      }
+      return 'array(' . implode(',', $parts) . ')';
+    }
+
+    if (is_int($value)) {
+      return (string) $value;
+    }
+
+    if (is_float($value)) {
+      return str_replace(',', '.', (string) $value);
+    }
+
+    if (is_bool($value)) {
+      return $value ? 'true' : 'false';
+    }
+
+    if ($value === null) {
+      return 'null';
+    }
+
+    $value = str_replace(
+      array('\\', "'", "\r", "\n", "\0"),
+      array('\\\\', "\\'", '\\r', '\\n', '\\0'),
+      (string) $value
+    );
+    return "'" . $value . "'";
+  }
+
+  function mikhmon_php_assignment_line($varName, $key, $value)
+  {
+    $varName = trim((string) $varName);
+    if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $varName)) {
+      throw new InvalidArgumentException('Invalid PHP variable name.');
+    }
+
+    return '$' . $varName . '[' . mikhmon_php_literal($key) . '] = ' . mikhmon_php_literal($value) . ';' . "\n";
+  }
+
+  function mikhmon_assignment_line_matches($line, $varName, $key)
+  {
+    $varName = trim((string) $varName);
+    if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $varName)) {
+      return false;
+    }
+
+    $literal = preg_quote(mikhmon_php_literal($key), '/');
+    return (bool) preg_match('/^\s*\$' . preg_quote($varName, '/') . '\s*\[\s*' . $literal . '\s*\]\s*=/', (string) $line);
+  }
+
+  function mikhmon_normalize_session_name($name)
+  {
+    return preg_replace('/\s+/', '-', trim((string) $name));
+  }
+
+  function mikhmon_is_valid_session_name($name)
+  {
+    $name = (string) $name;
+    if (!preg_match('/^[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,30}[A-Za-z0-9])?$/', $name)) {
+      return false;
+    }
+    if (preg_match('/^(mikhmon|new-\d+)$/i', $name)) {
+      return false;
+    }
+    if (preg_match('/(url|webhook|http|process|config|docker)/i', $name)) {
+      return false;
+    }
+    return true;
+  }
+
+  function mikhmon_replace_assignment_line_in_file($file, $varName, $key, $value, $matchKey = null)
+  {
+    $newLine = rtrim(mikhmon_php_assignment_line($varName, $key, $value), "\r\n");
+    $matchKey = $matchKey === null ? $key : $matchKey;
+    $lines = is_file($file) ? file($file, FILE_IGNORE_NEW_LINES) : array('<?php');
+    $out = array();
+    $replaced = false;
+
+    foreach ($lines as $line) {
+      if (mikhmon_assignment_line_matches($line, $varName, $matchKey)) {
+        if (!$replaced) {
+          $out[] = $newLine;
+          $replaced = true;
+        }
+      } else {
+        $out[] = $line;
+      }
+    }
+
+    if (!$replaced) {
+      $out[] = $newLine;
+    }
+
+    $written = file_put_contents($file, implode(PHP_EOL, $out) . PHP_EOL, LOCK_EX) !== false;
+    if ($written && function_exists('opcache_invalidate')) {
+      @opcache_invalidate($file, true);
+    }
+    return $written;
+  }
+
+  function mikhmon_delete_assignment_line_in_file($file, $varName, $key)
+  {
+    $lines = is_file($file) ? file($file, FILE_IGNORE_NEW_LINES) : array();
+    $out = array();
+
+    foreach ($lines as $line) {
+      if (!mikhmon_assignment_line_matches($line, $varName, $key)) {
+        $out[] = $line;
+      }
+    }
+
+    $written = file_put_contents($file, implode(PHP_EOL, $out) . PHP_EOL, LOCK_EX) !== false;
+    if ($written && function_exists('opcache_invalidate')) {
+      @opcache_invalidate($file, true);
+    }
+    return $written;
+  }
+
   function mikhmon_legacy_ros7_owner_keys($monthKey)
   {
     $monthKey = strtolower(trim((string) $monthKey));
@@ -258,7 +587,11 @@ if (!function_exists('mikhmon_month_map')) {
 
     $year = $matches[2];
     $monthNumber = (int) $months[$matches[1]];
-    $days = cal_days_in_month(CAL_GREGORIAN, $monthNumber, (int) $year);
+    $monthStart = DateTime::createFromFormat('!Y-n-j', (int) $year . '-' . $monthNumber . '-1');
+    if (!$monthStart) {
+      return array();
+    }
+    $days = (int) $monthStart->format('t');
     $prefix = substr($year, 0, 3) . substr(sprintf('%02d', $monthNumber), 1, 1) . '-';
     $owners = array();
     for ($day = 1; $day <= $days; $day++) {

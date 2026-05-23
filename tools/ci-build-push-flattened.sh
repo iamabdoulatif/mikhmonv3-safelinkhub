@@ -96,18 +96,10 @@ docker_login
 build_flat_image "linux/arm/v7" "mikhmon-build:armv7" "mikhmon-flat:armv7" "mikhmon_flat_armv7_${BUILD_STAMP}"
 push_flat_image "mikhmon-flat:armv7" "armv7" "linux/arm/v7"
 push_flat_image "mikhmon-flat:armv7" "arm32" "linux/arm/v7"
-push_flat_image "mikhmon-flat:armv7" "arm" "linux/arm/v7"
-push_flat_image "mikhmon-flat:armv7" "hap-ax-lite" "linux/arm/v7"
-push_flat_image "mikhmon-flat:armv7" "rb3011" "linux/arm/v7"
-push_flat_image "mikhmon-flat:armv7" "rb4011" "linux/arm/v7"
 
 build_flat_image "linux/arm64" "mikhmon-build:arm64" "mikhmon-flat:arm64" "mikhmon_flat_arm64_${BUILD_STAMP}"
 push_flat_image "mikhmon-flat:arm64" "arm64" "linux/arm64"
-push_flat_image "mikhmon-flat:arm64" "hap-ax2" "linux/arm64"
-push_flat_image "mikhmon-flat:arm64" "hap-ax3" "linux/arm64"
-push_flat_image "mikhmon-flat:arm64" "ax2" "linux/arm64"
-push_flat_image "mikhmon-flat:arm64" "ax3" "linux/arm64"
 
 publish_manifest_tags
 
-echo "Pushed flattened compressed images to ${IMAGE_NAME}: arm, arm32, armv7, arm64, hap-ax-lite, hap-ax2, hap-ax3, ax2, ax3, rb3011, rb4011; manifests: ${MANIFEST_TAGS}"
+echo "Pushed flattened compressed images to ${IMAGE_NAME}: arm32, armv7, arm64; manifests: ${MANIFEST_TAGS}"

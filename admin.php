@@ -102,6 +102,7 @@ if ($isLoginRoute) {
   $error_manager = '';
   $error_seller  = '';
 
+
   if (isset($_POST['login'])) {
     $user = $_POST['user'];
     $pass = $_POST['pass'];
@@ -246,17 +247,13 @@ if (!$hasAdminSession && !$hasEditorPortalAccess) {
   include_once('./process/reboot.php');
 } elseif ($id == "shutdown"  && !empty($session)) {
   include_once('./process/shutdown.php');
-} elseif ($id == "remove-session" && $session != "") {
+} elseif ($id == "remove-session" && isset($_POST['remove_session'])) {
+  csrf_guard();
   include_once('./include/menu.php');
-  $fc = file("./include/config.php" );
-  $f = fopen("./include/config.php", "w");
-  $q = "'";
-  $rem = '$data['.$q.$session.$q.']';
-  foreach ($fc as $line) {
-    if (!strstr($line, $rem))
-      fputs($f, $line);
+  $removeSession = mikhmon_normalize_session_name($_POST['remove_session']);
+  if (mikhmon_is_valid_session_name($removeSession)) {
+    mikhmon_delete_assignment_line_in_file("./include/config.php", 'data', $removeSession);
   }
-  fclose($f);
   echo "<script>window.location='./admin.php?id=sessions'</script>";
 } elseif ($id == "about") {
   include_once('./include/menu.php');
@@ -266,11 +263,16 @@ if (!$hasAdminSession && !$hasEditorPortalAccess) {
   echo "<b class='cl-w'><i class='fa fa-circle-o-notch fa-spin' style='font-size:24px'></i> Logout...</b>";
   session_destroy();
   echo "<script>window.location='./admin.php?id=login'</script>";
-} elseif ($id == "remove-logo" && $logo != ""  && !empty($session)) {
+} elseif ($id == "remove-logo" && isset($_POST['remove_logo'])  && !empty($session)) {
+  csrf_guard();
   include_once('./include/menu.php');
   $logopath = "./img/";
-  $remlogo = $logopath . $logo;
-  unlink("$remlogo");
+  $removeLogo = basename((string) $_POST['remove_logo']);
+  $imgRoot = realpath($logopath);
+  $logoPath = realpath($logopath . $removeLogo);
+  if ($imgRoot !== false && $logoPath !== false && strpos($logoPath, $imgRoot . DIRECTORY_SEPARATOR) === 0 && preg_match('/^logo-[a-zA-Z0-9_.-]+\.png$/', $removeLogo)) {
+    unlink($logoPath);
+  }
   echo "<script>window.location='./admin.php?id=uplogo&session=" . $session . "'</script>";
 } elseif ($id == "editor"  && !empty($session)) {
   if ($hasAdminSession) {

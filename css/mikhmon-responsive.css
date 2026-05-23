@@ -1,0 +1,225 @@
+/* ================================================================
+   mikhmon-responsive.css  v1.0
+   Responsive overrides for the Mikhmon admin interface.
+
+   Strategy:
+   - Loaded AFTER mikhmon-ui.*.min.css so equal-specificity rules
+     here override theme defaults at the same breakpoints.
+   - Does NOT duplicate work already done in mikhmon-portal.css
+     (seller/manager portals already have their own responsive layer).
+   - No !important unless absolutely necessary.
+   ================================================================ */
+
+/* ── 1. IMAGES – PREVENT OVERFLOW ───────────────────────────────── */
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ── 2. CARD / BOX – OVERFLOW PROTECTION ────────────────────────── */
+.card,
+.box {
+  max-width: 100%;
+  box-sizing: border-box;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* ── 3. TABLE SCROLL UTILITY ─────────────────────────────────────── */
+/* .overflow already has overflow-x:auto in the theme CSS.           */
+/* .table-responsive is only scoped to portals in mikhmon-portal.css */
+/* — this rule makes it work globally in the admin interface too.    */
+.table-responsive {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  width: 100%;
+}
+
+/* ── 4. BUTTON TOUCH TARGETS – MOBILE ───────────────────────────── */
+/* Apple/Google HIG recommend ≥ 44 × 44 px for interactive targets. */
+/* Theme CSS sets .btn { padding: 3px 10px } – too small for touch.  */
+@media screen and (max-width: 749px) {
+  .btn {
+    min-height: 44px;
+    padding: 8px 14px;
+    font-size: 15px;
+  }
+
+  .btn-login {
+    min-height: 44px;
+    padding: 8px 14px;
+    font-size: 15px;
+  }
+}
+
+/* ── 5. INPUT GROUPS – STACK VERTICALLY ON MOBILE ───────────────── */
+/* Theme CSS floats all [class*=input-group-] left but provides no   */
+/* mobile width override (unlike [class*=col-] which gets 100%).     */
+/* Result: multi-column input rows appear tiny on narrow screens.    */
+/* Fix: collapse all input-group divs to full width on mobile so     */
+/* form fields stack naturally.                                      */
+@media screen and (max-width: 749px) {
+  [class*="input-group-"] {
+    width: 100%;
+    float: none;
+    clear: both;
+    margin-bottom: 4px;
+    box-sizing: border-box;
+  }
+
+  [class*="input-group-"]:last-child {
+    margin-bottom: 0;
+  }
+
+  /* Stacked items no longer need asymmetric border-radius */
+  .group-item-l {
+    border-radius: 3px;
+  }
+
+  .group-item-r {
+    border-radius: 3px;
+  }
+
+  .group-item-md {
+    border-radius: 3px;
+  }
+}
+
+/* ── 6. MODAL – BETTER WIDTHS ACROSS BREAKPOINTS ────────────────── */
+/* Theme: 33.33% desktop, 80% mobile.                                */
+/* Improve: 96% on small phones, 70% on tablets, keep 33% on wide.  */
+@media screen and (max-width: 749px) {
+  .modal-window > div {
+    width: 96%;
+    margin: 4% auto;
+    max-height: 92vh;
+    overflow-y: auto;
+  }
+}
+
+@media screen and (min-width: 750px) and (max-width: 1100px) {
+  .modal-window > div {
+    width: 68%;
+    margin: 8% auto;
+  }
+}
+
+/* ── 7. MAIN CONTENT AREA ────────────────────────────────────────── */
+/* Prevent a wide child from creating page-level horizontal scroll.  */
+@media screen and (max-width: 749px) {
+  #main {
+    overflow-x: hidden;
+  }
+
+  .main-container {
+    padding: 5px 8px 10px;
+    box-sizing: border-box;
+  }
+}
+
+/* ── 8. FORM CONTROLS – PREVENT iOS AUTO-ZOOM ───────────────────── */
+/* Safari on iOS zooms when a focused <input> has font-size < 16px.  */
+@media screen and (max-width: 749px) {
+  .form-control,
+  .group-item,
+  select.form-control,
+  select.group-item,
+  input.form-control,
+  input.group-item {
+    font-size: 16px;
+  }
+}
+
+/* ── 9. TABLE INPUTS – OVERFLOW GUARD ───────────────────────────── */
+/* Prevent number/text inputs inside table cells from stretching     */
+/* beyond their cells on small screens.                              */
+@media screen and (max-width: 749px) {
+  .table input[type="text"],
+  .table input[type="number"],
+  .table input[type="password"],
+  .table select {
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+}
+
+/* ── 10. SIDEBAR OVERLAY ─────────────────────────────────────────── */
+/* Provides a semi-transparent backdrop when the sidebar is open on  */
+/* mobile. JS toggles .active to show/hide it.                       */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 8;
+}
+
+.sidebar-overlay.active {
+  display: block;
+}
+
+/* ── 11. SETTINGS PAGE ───────────────────────────────────────────── */
+/* Theme already handles width:95% at max-width:750px.               */
+/* Add box-sizing safety so padding doesn't cause overflow.          */
+.settings {
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+/* ── 12. BOX GROUP – RESPONSIVE ICONS ───────────────────────────── */
+/* Dashboard icon boxes use display:table-cell which doesn't         */
+/* reflow on narrow screens. On mobile, switch to flex wrapping.     */
+@media screen and (max-width: 749px) {
+  .box-group {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .box-group > div {
+    display: block;
+    flex: 1 1 80px;
+    min-width: 80px;
+  }
+
+  .box-group-icon {
+    width: auto;
+    flex: 1 1 72px;
+    min-width: 72px;
+    font-size: 28px;
+    padding: 4px 6px;
+    margin: 3px;
+  }
+}
+
+/* ── 13. TSCROLL – MAX HEIGHT ADJUSTMENT ON MOBILE ──────────────── */
+/* Theme uses height:70vh for .tscroll tbody which is fine on        */
+/* desktop but leaves little room on small phones after the navbar.  */
+@media screen and (max-width: 749px) {
+  .tscroll tbody {
+    height: 55vh;
+  }
+}
+
+/* ── 14. NAVBAR SAFE AREA ────────────────────────────────────────── */
+@media screen and (max-width: 749px) {
+  .navbar-left,
+  .navbar-right {
+    max-width: 100%;
+    overflow: hidden;
+  }
+}
+
+/* ── 15. LONG NAV LABELS ────────────────────────────────────────── */
+.sidenav .menu {
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+}
+
+@media screen and (min-width: 750px) {
+  .sidenav .menu {
+    line-height: 1.25;
+  }
+}

@@ -30,6 +30,7 @@ include_once('./include/auth.php');
 include_once('./include/csrf.php');
 include_once('./include/transfer_log.php');
 include_once('./include/transfer_requests.php');
+include_once('./include/accounting_notifications.php');
 
 if ($_SESSION['theme'] == "") {
     $theme      = $theme;
@@ -74,6 +75,8 @@ $TotalReg   = 0;
 $seller_session_name = '';
 $seller_session_missing = false;
 $seller_session_message = '';
+$seller_router_connected = false;
+$seller_connection_error = '';
 
 if ($seller_logged_in) {
     $sellerUsername      = $_SESSION['seller_username'];
@@ -93,8 +96,17 @@ if ($seller_logged_in) {
     if (!$seller_session_missing) {
         $API = new RouterosAPI();
         $API->debug = false;
+        $API->timeout = 2;
+        $API->attempts = 1;
+        $API->delay = 0;
     }
-    if (!$seller_session_missing && $API->connect($iphost, $userhost, decrypt($passwdhost))) {
+    if (!$seller_session_missing) {
+        $seller_router_connected = $API->connect($iphost, $userhost, decrypt($passwdhost));
+        if (!$seller_router_connected) {
+            $seller_connection_error = 'Connexion impossible au routeur "' . $seller_session_name . '" (' . $iphost . ':8728). Vérifiez l’IP, le service API MikroTik et les identifiants.';
+        }
+    }
+    if ($seller_router_connected) {
         $gettimezone = $API->comm("/system/clock/print");
         $timezone    = mikhmon_safe_timezone(isset($gettimezone[0]['time-zone-name']) ? $gettimezone[0]['time-zone-name'] : 'UTC');
         date_default_timezone_set($timezone);
@@ -399,14 +411,16 @@ if ($seller_logged_in && isset($API)) {
 // ── Demandes en attente pour le vendeur connecté (notifications) ─────────────
 $pendingRequests      = [];
 $pendingRequestsCount = 0;
+$accountingNotifications = [];
 if ($seller_logged_in) {
     $pendingRequests      = tr_get_pending_for($sellerUsername);
     $pendingRequestsCount = count($pendingRequests);
+    $accountingNotifications = mikhmon_accounting_notifications_for_seller($sellerUsername, $seller_session_name, 3);
 }
 
 // ── Identité du routeur ──────────────────────────────────────────────────────
 $identity = '';
-if ($seller_logged_in && isset($API) && $API->connect($iphost, $userhost, decrypt($passwdhost))) {
+if ($seller_router_connected) {
     $gi = $API->comm("/system/identity/print");
     $identity = isset($gi[0]['name']) ? $gi[0]['name'] : '';
 }
@@ -636,6 +650,59 @@ if ($seller_logged_in && $action === 'generate') {
     }
 }
 
+/* ── Notifications comptabilité ──────────────────────────────────── */
+.accounting-notif-panel {
+    background: #fff8e1;
+    border: 1px solid #ffe082;
+    border-left: 5px solid #f39c12;
+    border-radius: 8px;
+    margin-bottom: 14px;
+    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(0,0,0,.06);
+}
+.accounting-notif-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 14px;
+    color: #7a4f00;
+    font-weight: bold;
+    border-bottom: 1px solid rgba(122,79,0,.12);
+}
+.accounting-notif-item {
+    padding: 12px 14px;
+    color: #2f2f2f;
+    line-height: 1.55;
+    border-bottom: 1px solid rgba(122,79,0,.1);
+}
+.accounting-notif-item:last-child {
+    border-bottom: none;
+}
+.accounting-notif-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    color: #805b13;
+    font-size: 12px;
+    margin-top: 7px;
+}
+@media (max-width: 600px) {
+    .accounting-notif-title {
+        align-items: flex-start;
+        line-height: 1.35;
+    }
+    .accounting-notif-item {
+        font-size: 13px;
+    }
+    .accounting-notif-meta {
+        display: block;
+    }
+    .accounting-notif-meta span {
+        display: block;
+        margin-top: 3px;
+    }
+}
+
 /* ── Overlay mobile pour fermer le sidenav ──────────────────── */
 #sidenav-overlay {
     display: none;
@@ -648,6 +715,7 @@ if ($seller_logged_in && $action === 'generate') {
 
     </style>
     <link rel="stylesheet" href="css/mikhmon-portal.css">
+    <link rel="stylesheet" href="css/mikhmon-responsive.css">
 </head>
 <body class="seller-portal">
 <div class="wrapper">
@@ -668,6 +736,7 @@ if ($seller_logged_in && $action === 'generate') {
         <div class="login-logo-contact">+2250709100552</div>
       </div>
       <form autocomplete="off" action="" method="post" class="portal-auth-form">
+        <?= csrf_field() ?>
         <div class="portal-auth-field">
           <input class="form-control portal-auth-input"
                  type="text" name="seller_user" placeholder="<?= $_seller_id ?>" required autofocus>
@@ -774,6 +843,26 @@ if ($seller_logged_in && $action === 'generate') {
 <div id="loading" class="lds-dual-ring"></div>
 <div class="main-container">
 
+<?php if (!empty($accountingNotifications)): ?>
+<div class="row"><div class="col-12">
+  <div class="accounting-notif-panel">
+    <div class="accounting-notif-title">
+      <i class="fa fa-bell"></i>
+      Notification de comptabilité
+    </div>
+    <?php foreach ($accountingNotifications as $notice): ?>
+      <div class="accounting-notif-item">
+        <div><?= htmlspecialchars(isset($notice['message']) ? $notice['message'] : '') ?></div>
+        <div class="accounting-notif-meta">
+          <span><i class="fa fa-user"></i> <?= htmlspecialchars(isset($notice['sender_name']) ? $notice['sender_name'] : '') ?></span>
+          <span><i class="fa fa-clock-o"></i> <?= htmlspecialchars(isset($notice['created_at']) ? $notice['created_at'] : '') ?></span>
+        </div>
+      </div>
+    <?php endforeach; ?>
+  </div>
+</div></div>
+<?php endif; ?>
+
 <?php if ($seller_session_missing): ?>
 <div class="row"><div class="col-12">
   <div class="card">
@@ -785,6 +874,26 @@ if ($seller_logged_in && $action === 'generate') {
         L’administrateur doit recréer ou réassocier cette session avant de reprendre les ventes et les impressions.
       </div>
       <div class="mgr-quick-actions" style="margin-top:16px;">
+        <a href="./sellers.php?action=logout" class="btn" style="background:#34495e;color:#fff;padding:10px 16px;">
+          <i class="fa fa-sign-out"></i> <?= $_logout ?>
+        </a>
+      </div>
+    </div>
+  </div>
+</div></div>
+<?php elseif ($seller_connection_error !== ''): ?>
+<div class="row"><div class="col-12">
+  <div class="card">
+    <div class="card-header"><h3 style="margin:0;"><i class="fa fa-exclamation-triangle"></i> Routeur indisponible</h3></div>
+    <div class="card-body">
+      <div class="portal-note-card">
+        <b><?= htmlspecialchars($seller_connection_error) ?></b><br>
+        Le portail vendeur reste ouvert, mais les tickets, ventes et transferts sont désactivés tant que Mikhmon ne peut pas joindre RouterOS.
+      </div>
+      <div class="mgr-quick-actions" style="margin-top:16px;">
+        <a href="./sellers.php?action=dashboard" class="btn bg-primary" style="padding:10px 16px;">
+          <i class="fa fa-refresh"></i> Réessayer
+        </a>
         <a href="./sellers.php?action=logout" class="btn" style="background:#34495e;color:#fff;padding:10px 16px;">
           <i class="fa fa-sign-out"></i> <?= $_logout ?>
         </a>
@@ -1152,7 +1261,7 @@ document.getElementById('reqModal').addEventListener('click', function (e) {
 $allTickets   = array();
 $usedTickets  = array();
 $unusedTickets = array();
-if (isset($API) && $API->connect($iphost, $userhost, decrypt($passwdhost))) {
+if ($seller_router_connected) {
     $allUsers = $API->comm("/ip/hotspot/user/print");
     if (is_array($allUsers)) {
         $sellerKey = strtolower($sellerUsername);

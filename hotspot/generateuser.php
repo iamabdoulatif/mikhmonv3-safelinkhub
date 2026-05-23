@@ -63,17 +63,18 @@ if ($isStandaloneGenerator) {
 
 	$API = new RouterosAPI();
 	$API->debug = false;
-	if ($API->connect($iphost, $userhost, decrypt($passwdhost))) {
-		$gettimezone = $API->comm("/system/clock/print");
-		if (!empty($gettimezone[0]['time-zone-name'])) {
-			date_default_timezone_set($gettimezone[0]['time-zone-name']);
+		if ($API->connect($iphost, $userhost, decrypt($passwdhost))) {
+			$gettimezone = $API->comm("/system/clock/print");
+			if (!empty($gettimezone[0]['time-zone-name'])) {
+				$_SESSION['timezone'] = mikhmon_safe_timezone($gettimezone[0]['time-zone-name'], $_SESSION['timezone'] ?? 'UTC');
+				date_default_timezone_set($_SESSION['timezone']);
+			} else {
+				date_default_timezone_set(mikhmon_safe_timezone($_SESSION['timezone'] ?? 'UTC'));
+			}
 		} else {
-			date_default_timezone_set($_SESSION['timezone'] ?? 'UTC');
+			date_default_timezone_set(mikhmon_safe_timezone($_SESSION['timezone'] ?? 'UTC'));
 		}
-	} else {
-		date_default_timezone_set($_SESSION['timezone'] ?? 'UTC');
 	}
-}
 
 if (!isset($_SESSION["mikhmon"]) && empty($_SESSION['manager_username'])) {
 	if (!empty($_SESSION['seller_username'])) {
@@ -83,7 +84,7 @@ if (!isset($_SESSION["mikhmon"]) && empty($_SESSION['manager_username'])) {
 	header("Location:../admin.php?id=login");
 } else {
 // time zone
-date_default_timezone_set($_SESSION['timezone'] ?? 'UTC');
+	date_default_timezone_set(mikhmon_safe_timezone($_SESSION['timezone'] ?? 'UTC'));
 
 	$generateRole = !empty($_SESSION["mikhmon"]) ? 'admin' : 'manager';
 	if (empty($session)) {
@@ -381,6 +382,7 @@ date_default_timezone_set($_SESSION['timezone'] ?? 'UTC');
 	<link rel="stylesheet" type="text/css" href="<?= $appPrefix ?>css/font-awesome/css/font-awesome.min.css">
 	<link rel="stylesheet" href="<?= $appPrefix ?>css/mikhmon-ui.<?= htmlspecialchars($theme) ?>.min.css">
 	<link rel="stylesheet" href="<?= $appPrefix ?>css/mikhmon-portal.css">
+	<link rel="stylesheet" href="<?= $appPrefix ?>css/mikhmon-responsive.css">
 	<link rel="icon" href="<?= $appPrefix ?>img/favicon.png">
 	<style>
 		body { background:#20262e; }

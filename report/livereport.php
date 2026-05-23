@@ -18,13 +18,14 @@
 session_start();
 // hide all error
 error_reporting(0);
+include_once(__DIR__ . '/../include/mikhmon_compat.php');
 if (!isset($_SESSION["mikhmon"])) {
   header("Location:../admin.php?id=login");
 } else {
 // load session MikroTik
   $session = $_GET['session'];
 // set  timezone
-date_default_timezone_set($_SESSION['timezone']);
+	date_default_timezone_set(mikhmon_safe_timezone($_SESSION['timezone'] ?? 'UTC'));
 
 // lang
 include('../include/lang.php');
@@ -34,7 +35,7 @@ include('../lang/'.$langid.'.php');
 // load config
   include('../include/config.php');
   include('../include/readcfg.php');
-  include_once('../include/mikhmon_compat.php');
+	  include_once('../include/mikhmon_compat.php');
   include('../include/sellers_config.php');
 
 // routeros api
@@ -230,5 +231,3 @@ include('../lang/'.$langid.'.php');
 </div>
 <?php endif; ?>
 </div>
-
-

@@ -18,7 +18,6 @@
 session_start();
 // hide all error
 error_reporting(0);
-
 $API->comm("/ip/hotspot/user/set", array(
 	".id" => "$resethotspotuser", "limit-uptime" => "0", "comment" => ""
 ));

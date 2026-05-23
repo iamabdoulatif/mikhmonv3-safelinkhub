@@ -38,8 +38,9 @@ if (!isset($_SESSION["mikhmon"])) {
 	$prefix = $_GET['prefix'];
 	
 
-	$gettimezone = $API->comm("/system/clock/print");
-	$timezone = $gettimezone[0]['time-zone-name'];
+		$gettimezone = $API->comm("/system/clock/print");
+		$timezone = mikhmon_safe_timezone($gettimezone[0]['time-zone-name'] ?? ($_SESSION['timezone'] ?? 'UTC'));
+		$_SESSION['timezone'] = $timezone;
 	date_default_timezone_set($timezone);
 
 	if (isset($remdata)) {

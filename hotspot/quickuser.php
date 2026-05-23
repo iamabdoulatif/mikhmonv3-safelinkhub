@@ -25,7 +25,7 @@ if (!isset($_SESSION["mikhmon"])) {
 } else {
 
 // time zone
-date_default_timezone_set($_SESSION['timezone']);
+	date_default_timezone_set(mikhmon_safe_timezone($_SESSION['timezone'] ?? 'UTC'));
 	
 // load session MikroTik
 $session = $_GET['session'];
@@ -245,7 +245,7 @@ if (mikhmon_currency_uses_integer_amounts($currency, $cekindo)) {
   }
 
   } else {
-    $pricebt = $currency . " " . number_format($price);
+	    $pricebt = mikhmon_format_money_amount($price, $currency, $cekindo);
     $timelimit = $utimelimit;
     $validity = $getvalid;
   }

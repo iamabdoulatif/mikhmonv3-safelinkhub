@@ -20,8 +20,9 @@ session_start();
 error_reporting(0);
 if (!isset($_SESSION["mikhmon"])) {
 	header("Location:../admin.php?id=login");
-} else {
-	include_once(__DIR__ . '/../include/mikhmon_compat.php');
+	} else {
+		include_once(__DIR__ . '/../include/mikhmon_compat.php');
+		include_once(__DIR__ . '/../include/csrf.php');
 
 	$bindingMessage = "";
 	$bindingError = "";
@@ -38,6 +39,7 @@ if (!isset($_SESSION["mikhmon"])) {
 	}
 
 	if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_ip_binding_duration'])) {
+		csrf_guard();
 		$bindingMac = strtoupper(trim(isset($_POST['binding_mac']) ? $_POST['binding_mac'] : ''));
 		$bindingAddress = trim(isset($_POST['binding_address']) ? $_POST['binding_address'] : '');
 		$bindingToAddress = trim(isset($_POST['binding_to_address']) ? $_POST['binding_to_address'] : '');
@@ -144,6 +146,7 @@ if ($countbinding < 2) {
 <?php } ?>
 <div class="box-bordered mr-b-10 ipbind-duration-panel">
 	<form class="ipbind-duration-form" method="post" action="./?hotspot=ipbinding&session=<?= urlencode($session); ?>">
+		<?= csrf_field() ?>
 		<input type="hidden" name="add_ip_binding_duration" value="1">
 		<div class="ipbind-duration-grid">
 			<div class="ipbind-field ipbind-field-mac">

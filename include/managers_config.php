@@ -6,4 +6,3 @@ if (isset($_SERVER["REQUEST_URI"]) && substr($_SERVER["REQUEST_URI"], -20) == "m
 // Comptes gérants - gérés par l'administrateur
 // Format: $managers_data['username'] = array('password' => encrypt('password'), 'name' => 'Nom Affiché', 'session' => 'NomSession');
 $managers_data = array();
-$managers_data['mohamed'] = array('password' => 'aWNlbA==', 'name' => 'Gerant 01', 'session' => 'BRN-TECH');

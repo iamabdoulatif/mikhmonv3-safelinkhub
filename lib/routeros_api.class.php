@@ -441,7 +441,7 @@ class RouterosAPI
 
 // encrypt decript
 
-function encrypt($string, $key=128) {
+function mikhmon_legacy_encrypt($string, $key=128) {
 	$result = '';
 	for($i=0, $k= strlen($string); $i<$k; $i++) {
 		$char = substr($string, $i, 1);
@@ -451,9 +451,13 @@ function encrypt($string, $key=128) {
 	}
 	return base64_encode($result);
 }
-function decrypt($string, $key=128) {
+
+function mikhmon_legacy_decrypt($string, $key=128) {
 	$result = '';
 	$string = base64_decode($string);
+	if ($string === false) {
+		return '';
+	}
 	for($i=0, $k=strlen($string); $i< $k ; $i++) {
 		$char = substr($string, $i, 1);
 		$keychar = substr($key, ($i % strlen($key))-1, 1);
@@ -461,6 +465,73 @@ function decrypt($string, $key=128) {
 		$result .= $char;
 	}
 	return $result;
+}
+
+function mikhmon_random_bytes($length) {
+	if (function_exists('random_bytes')) {
+		return random_bytes($length);
+	}
+	if (function_exists('openssl_random_pseudo_bytes')) {
+		$bytes = openssl_random_pseudo_bytes($length);
+		if ($bytes !== false && strlen($bytes) === $length) {
+			return $bytes;
+		}
+	}
+	return substr(hash('sha256', uniqid('', true) . microtime(true), true), 0, $length);
+}
+
+function mikhmon_crypto_key() {
+	$env = getenv('MIKHMON_SECRET_KEY');
+	if (is_string($env) && strlen($env) >= 32) {
+		if (strlen($env) === 64 && ctype_xdigit($env)) {
+			return hex2bin($env);
+		}
+		return hash('sha256', $env, true);
+	}
+
+	$keyFile = dirname(__DIR__) . '/include/secret.key.php';
+	if (is_file($keyFile)) {
+		$hex = include $keyFile;
+		if (is_string($hex) && strlen($hex) === 64 && ctype_xdigit($hex)) {
+			return hex2bin($hex);
+		}
+	}
+
+	$key = mikhmon_random_bytes(32);
+	$content = "<?php return '" . bin2hex($key) . "';\n";
+	@file_put_contents($keyFile, $content, LOCK_EX);
+	@chmod($keyFile, 0600);
+	return $key;
+}
+
+function encrypt($string, $key=128) {
+	if (function_exists('openssl_encrypt') && in_array('aes-256-gcm', openssl_get_cipher_methods(), true)) {
+		$iv = mikhmon_random_bytes(12);
+		$tag = '';
+		$ciphertext = openssl_encrypt((string) $string, 'aes-256-gcm', mikhmon_crypto_key(), OPENSSL_RAW_DATA, $iv, $tag, '', 16);
+		if ($ciphertext !== false && strlen($tag) === 16) {
+			return 'v2:' . base64_encode($iv . $tag . $ciphertext);
+		}
+	}
+
+	return mikhmon_legacy_encrypt($string, $key);
+}
+
+function decrypt($string, $key=128) {
+	$string = (string) $string;
+	if (strpos($string, 'v2:') === 0 && function_exists('openssl_decrypt')) {
+		$payload = base64_decode(substr($string, 3), true);
+		if ($payload === false || strlen($payload) <= 28) {
+			return '';
+		}
+		$iv = substr($payload, 0, 12);
+		$tag = substr($payload, 12, 16);
+		$ciphertext = substr($payload, 28);
+		$plain = openssl_decrypt($ciphertext, 'aes-256-gcm', mikhmon_crypto_key(), OPENSSL_RAW_DATA, $iv, $tag);
+		return $plain === false ? '' : $plain;
+	}
+
+	return mikhmon_legacy_decrypt($string, $key);
 }
 
 // Reformat date time MikroTik

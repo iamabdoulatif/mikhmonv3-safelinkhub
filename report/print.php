@@ -62,8 +62,9 @@ if (!isset($_SESSION["mikhmon"])) {
 		$fcomment = explode("!!",$prefix)[1];
 	}else{$fcomment = $fcomment;}
 
-	$gettimezone = $API->comm("/system/clock/print");
-	$timezone = $gettimezone[0]['time-zone-name'];
+		$gettimezone = $API->comm("/system/clock/print");
+		$timezone = mikhmon_safe_timezone($gettimezone[0]['time-zone-name'] ?? ($_SESSION['timezone'] ?? 'UTC'));
+		$_SESSION['timezone'] = $timezone;
 	date_default_timezone_set($timezone);
 
 	if (isset($remdata)) {

@@ -48,7 +48,9 @@ if ($manager_index_logged_in) {
     'disable-hotspot-user', 'enable-ip-binding', 'disable-ip-binding',
     'enable-scheduler', 'disable-scheduler', 'remove-scheduler',
     'enable-pppsecret', 'disable-pppsecret', 'remove-pppsecret',
-    'remove-pprofile', 'remove-pactive', 'export'
+    'remove-pprofile', 'remove-pactive',
+    'enable-pppoe-server', 'disable-pppoe-server', 'remove-pppoe-server',
+    'export'
   );
   foreach ($manager_denied_params as $denied_param) {
     if (isset($_GET[$denied_param]) && $_GET[$denied_param] !== '') {
@@ -156,6 +158,10 @@ if (!isset($_SESSION["mikhmon"]) && !$manager_index_logged_in) {
   $removesecr = $_GET['remove-pppsecret'];
   $removepprofile = $_GET['remove-pprofile'];
   $removepactive = $_GET['remove-pactive'];
+  $pppoeserverbyname = $_GET['pppoe-server'];
+  $enablepppoeserver = $_GET['enable-pppoe-server'];
+  $disablepppoeserver = $_GET['disable-pppoe-server'];
+  $removepppoeserver = $_GET['remove-pppoe-server'];
   $srv = $_GET['srv'];
   $prof = $_GET['profile'];
   $comm = $_GET['comment'];
@@ -166,7 +172,7 @@ if (!isset($_SESSION["mikhmon"]) && !$manager_index_logged_in) {
 
 
   $pagehotspot = array('users','hosts','ipbinding','cookies','log','dhcp-leases');
-  $pageppp = array('secrets','profiles','active',);
+  $pageppp = array('secrets','profiles','active','servers',);
   $pagereport = array('userlog','selling');
 
   include_once('./include/headhtml.php');
@@ -532,6 +538,28 @@ elseif ($ppp == "edit-profile") {
     echo "<b class='cl-w'><i class='fa fa-circle-o-notch fa-spin' style='font-size:24px'></i> Processing...</b>";
 
     include_once('./process/removepactive.php');
+  }
+
+// pppoe servers
+  elseif ($ppp == "servers") {
+    include_once('./ppp/pppoeservers.php');
+  }
+
+// add pppoe server
+  elseif ($ppp == "add-server") {
+    include_once('./ppp/addpppoeserver.php');
+  }
+
+// edit pppoe server
+  elseif ($pppoeserverbyname != "") {
+    include_once('./ppp/pppoeserverbyname.php');
+  }
+
+// enable disable remove pppoe server
+  elseif ($enablepppoeserver != "" || $disablepppoeserver != "" || $removepppoeserver != "") {
+    echo "<b class='cl-w'><i class='fa fa-circle-o-notch fa-spin' style='font-size:24px'></i> Processing...</b>";
+
+    include_once('./process/pppoeserver.php');
   }
 
 // sys scheduler

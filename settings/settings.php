@@ -18,10 +18,13 @@
 
 // hide all error
 error_reporting(0);
+include_once(__DIR__ . '/../include/csrf.php');
+include_once(__DIR__ . '/../include/mikhmon_compat.php');
 
 if (!isset($_SESSION["mikhmon"])) {
   header("Location:../admin.php?id=login");
 } else {
+  $settings_error = '';
   $isNewRouterDraft = (($id == "settings") && (
     (!empty($router) && preg_match('/^new-\d+$/', (string)$router))
     || (!empty($session) && preg_match('/^new-\d+$/', (string)$session) && !isset($data[$session]))
@@ -43,9 +46,10 @@ if (!isset($_SESSION["mikhmon"])) {
     $_SESSION["connect"] = "";
   }
 
-  if (isset($_POST['save'])) {
+	  if (isset($_POST['save'])) {
+	    csrf_guard();
 
-    $siphost = (preg_replace('/\s+/', '', $_POST['ipmik']));
+	    $siphost = (preg_replace('/\s+/', '', $_POST['ipmik']));
     $suserhost = ($_POST['usermik']);
     $spasswdhost = encrypt($_POST['passmik']);
     $shotspotname = str_replace("'","",$_POST['hotspotname']);
@@ -63,26 +67,30 @@ if (!isset($_SESSION["mikhmon"])) {
     //$sinfolp = ($_POST['infolp']);
     $sidleto = ($_POST['idleto']);
 
-    $sesname = (preg_replace('/\s+/', '-', $_POST['sessname']));
+    $sesname = mikhmon_normalize_session_name($_POST['sessname']);
     $slivereport = ($_POST['livereport']);
 
-    if ($isNewRouterDraft || empty($session) || !isset($data[$session])) {
-      $newLine = "\n" . '$data' . "['" . $sesname . "'] = array ('1'=>'" . $sesname . "!" . $siphost . "','" . $sesname . "@|@" . $suserhost . "','" . $sesname . "#|#" . $spasswdhost . "','" . $sesname . "%" . $shotspotname . "','" . $sesname . "^" . $sdnsname . "','" . $sesname . "&" . $scurrency . "','" . $sesname . "*" . $sreload . "','" . $sesname . "(" . $siface . "','" . $sesname . ")" . $sinfolp . "','" . $sesname . "=" . $sidleto . "','" . $sesname . "@!@" . $slivereport . "');";
-      file_put_contents("./include/config.php", rtrim(file_get_contents("./include/config.php")) . $newLine . "\n");
+    if (!mikhmon_is_valid_session_name($sesname)) {
+      $settings_error = "Nom de session invalide. Utilisez uniquement lettres, chiffres, tiret, point ou underscore (32 caractères max). Exemple : ROUTEUR-1.";
     } else {
-      $search = array('1' => "$session!$iphost", "$session@|@$userhost", "$session#|#$passwdhost", "$session%$hotspotname", "$session^$dnsname", "$session&$currency", "$session*$areload", "$session($iface", "$session)$infolp", "$session=$idleto", "'$session'", "$session@!@$livereport");
-
-      $replace = array('1' => "$sesname!$siphost", "$sesname@|@$suserhost", "$sesname#|#$spasswdhost", "$sesname%$shotspotname", "$sesname^$sdnsname", "$sesname&$scurrency", "$sesname*$sreload", "$sesname($siface", "$sesname)$sinfolp", "$sesname=$sidleto", "'$sesname'", "$sesname@!@$slivereport");
-
-      for ($i = 1; $i < 15; $i++) {
-        $file = file("./include/config.php");
-        $content = file_get_contents("./include/config.php");
-        $newcontent = str_replace((string)$search[$i], (string)$replace[$i], "$content");
-        file_put_contents("./include/config.php", "$newcontent");
-      }
-    }
+	    $sessionValues = array(
+	      1 => $sesname . "!" . $siphost,
+	      2 => $sesname . "@|@" . $suserhost,
+	      3 => $sesname . "#|#" . $spasswdhost,
+	      4 => $sesname . "%" . $shotspotname,
+	      5 => $sesname . "^" . $sdnsname,
+	      6 => $sesname . "&" . $scurrency,
+	      7 => $sesname . "*" . $sreload,
+	      8 => $sesname . "(" . $siface,
+	      9 => $sesname . ")" . $sinfolp,
+	      10 => $sesname . "=" . $sidleto,
+	      11 => $sesname . "@!@" . $slivereport,
+	    );
+	    $matchSession = ($isNewRouterDraft || empty($session) || !isset($data[$session])) ? $sesname : $session;
+	    mikhmon_replace_assignment_line_in_file("./include/config.php", 'data', $sesname, $sessionValues, $matchSession);
     $_SESSION["connect"] = "";
     echo "<script>window.location='./admin.php?id=settings&session=" . $sesname . "'</script>";
+    }
   }
   if (!$isNewRouterDraft && $currency == "") {
     echo "<script>window.location='./admin.php?id=settings&session=" . $session . "'</script>";
@@ -108,6 +116,7 @@ if (!isset($_SESSION["mikhmon"])) {
 </script>
 
 <form autocomplete="off" method="post" action="" name="settings">  
+<?= csrf_field() ?>
 <div class="row">
 	<div class="col-12">
   		<div class="card" >
@@ -115,6 +124,11 @@ if (!isset($_SESSION["mikhmon"])) {
   				<h3 class="card-title"><i class="fa fa-gear"></i> <?= $_session_settings ?> &nbsp; | &nbsp;&nbsp;<i onclick="location.reload();" class="fa fa-refresh pointer " title="Reload data"></i></h3>
   			</div>
         <div class="card-body">
+        <?php if (!empty($settings_error)) { ?>
+        <div class="bg-danger" style="padding:10px 12px;border-radius:5px;margin-bottom:12px;color:#fff;">
+          <i class="fa fa-warning"></i> <?= htmlspecialchars($settings_error) ?>
+        </div>
+        <?php } ?>
     	   <div class="row">
 			     <div class="col-6">
             <div class="col-12">
@@ -280,6 +294,3 @@ var _0x1d39=["\x68\x6F\x73\x74\x6E\x61\x6D\x65","\x6C\x6F\x63\x61\x74\x69\x6F\x6
 
 
 </script>
-
-
-

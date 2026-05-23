@@ -24,6 +24,7 @@ include('./settings/settheme.php');
 include('./settings/setlang.php');
 include('./include/sellers_config.php');
 include_once('./include/seller_ticket_helper.php');
+include_once('./include/accounting_notifications.php');
 include('./include/managers_config.php');
 include_once('./include/auth.php');
 include_once('./include/csrf.php');
@@ -96,6 +97,8 @@ $globalStockIds = array();
 $allStockUsers  = array();
 $manager_session_missing = false;
 $manager_session_message = '';
+$manager_router_connected = false;
+$manager_connection_error = '';
 
 if ($manager_logged_in) {
     $managerUsername      = $_SESSION['manager_username'];
@@ -116,9 +119,19 @@ if ($manager_logged_in) {
     if (!$manager_session_missing) {
         $API = new RouterosAPI();
         $API->debug = false;
+        $API->timeout = 2;
+        $API->attempts = 1;
+        $API->delay = 0;
     }
 
-    if (!$manager_session_missing && $API->connect($iphost, $userhost, decrypt($passwdhost))) {
+    if (!$manager_session_missing) {
+        $manager_router_connected = $API->connect($iphost, $userhost, decrypt($passwdhost));
+        if (!$manager_router_connected) {
+            $manager_connection_error = 'Connexion impossible au routeur "' . $manager_session_name . '" (' . $iphost . ':8728). Vérifiez l’IP, le service API MikroTik et les identifiants.';
+        }
+    }
+
+    if ($manager_router_connected) {
         $gettimezone = $API->comm("/system/clock/print");
         if (!empty($gettimezone[0]['time-zone-name'])) {
             date_default_timezone_set(mikhmon_safe_timezone($gettimezone[0]['time-zone-name']));
@@ -306,7 +319,7 @@ if ($manager_logged_in && $action === 'vendors') {
     if (isset($_POST['add_seller'])) {
         $nw = preg_replace('/[^a-zA-Z0-9_]/', '', trim($_POST['new_user']));
         $np = trim($_POST['new_pass']);
-        $nn = htmlspecialchars(trim($_POST['new_name']));
+        $nn = trim($_POST['new_name']);
         $ns = trim($_POST['new_session']);
         if ($nw == '' || $np == '' || $nn == '') {
             $msg_vendors = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> ' . (isset($_required_fields_msg) ? $_required_fields_msg : 'All fields required.') . '</div>';
@@ -314,7 +327,12 @@ if ($manager_logged_in && $action === 'vendors') {
             $msg_vendors = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> ' . (isset($_seller_exists) ? $_seller_exists : 'Already exists.') . '</div>';
         } else {
             $ep = encrypt($np);
-            file_put_contents($sellers_file, '$sellers_data[\'' . $nw . '\'] = array(\'password\' => \'' . $ep . '\', \'name\' => \'' . $nn . '\', \'session\' => \'' . $ns . '\', \'commission\' => 10);' . "\n", FILE_APPEND);
+            file_put_contents($sellers_file, mikhmon_php_assignment_line('sellers_data', $nw, array(
+                'password' => $ep,
+                'name' => $nn,
+                'session' => $ns,
+                'commission' => 10,
+            )), FILE_APPEND | LOCK_EX);
             $msg_vendors = '<div class="bg-success" style="padding:8px;border-radius:5px;"><i class="fa fa-check"></i> ' . (isset($_seller) ? $_seller : 'Vendor') . ' <b>' . $nw . '</b> OK.</div>';
             include($sellers_file);
             $managerSellersData = mikhmon_filter_session_sellers($sellers_data, $manager_session_name);
@@ -330,7 +348,12 @@ if ($manager_logged_in && $action === 'vendors') {
             $f   = fopen($sellers_file, 'w');
             foreach ($fc as $ln) {
                 if (strpos($ln, '$sellers_data[\'' . $cu . '\']') !== false) {
-                    $ln = '$sellers_data[\'' . $cu . '\'] = array(\'password\' => \'' . $en . '\', \'name\' => \'' . $sellers_data[$cu]['name'] . '\', \'session\' => \'' . $sellers_data[$cu]['session'] . '\', \'commission\' => ' . $curr_comm . ');' . "\n";
+                    $ln = mikhmon_php_assignment_line('sellers_data', $cu, array(
+                        'password' => $en,
+                        'name' => $sellers_data[$cu]['name'],
+                        'session' => $sellers_data[$cu]['session'],
+                        'commission' => $curr_comm,
+                    ));
                 }
                 fputs($f, $ln);
             }
@@ -473,8 +496,59 @@ foreach (file('./include/config.php') as $ln) {
     if ($sn != '' && $sn != 'mikhmon') $available_sessions[] = $sn;
 }
 $available_sessions = array_unique($available_sessions);
+$accountingMonthKey = strlen($idbl) > 0 ? strtolower($idbl) : strtolower(date("M")) . date("Y");
+$accountingBounds = mikhmon_accounting_month_bounds($accountingMonthKey);
+$accountingFrom = mikhmon_accounting_iso_date(isset($_GET['from']) ? $_GET['from'] : '', $accountingBounds['from']);
+$accountingTo = mikhmon_accounting_iso_date(isset($_GET['to']) ? $_GET['to'] : '', $accountingBounds['to']);
+if ($accountingFrom > $accountingTo) {
+    $accountingTmp = $accountingFrom;
+    $accountingFrom = $accountingTo;
+    $accountingTo = $accountingTmp;
+}
+$accountingSeller = preg_replace('/[^a-zA-Z0-9_]/', '', isset($_GET['seller']) ? $_GET['seller'] : '');
+if ($accountingSeller !== '' && !isset($managerSellersData[$accountingSeller])) {
+    $accountingSeller = '';
+}
+$accountingSettlementTime = mikhmon_accounting_settlement_time(isset($_GET['settled_at']) ? $_GET['settled_at'] : (isset($_POST['settled_at']) ? $_POST['settled_at'] : ''), date('H:i:s'));
+$accountingNextSettlementTime = mikhmon_accounting_settlement_time(isset($_GET['next_settled_at']) ? $_GET['next_settled_at'] : (isset($_POST['next_settled_at']) ? $_POST['next_settled_at'] : ''), $accountingSettlementTime);
+$accountingSummary = mikhmon_accounting_period_summary($getData, $managerSellersData, $accountingFrom, $accountingTo, $accountingSeller);
+$accountingNextFrom = '';
+$accountingNextTo = $accountingBounds['to'];
+if ($accountingTo !== '') {
+    $accountingNextDate = new DateTime($accountingTo);
+    $accountingNextDate->modify('+1 day');
+    $nextIso = $accountingNextDate->format('Y-m-d');
+    if ($nextIso <= $accountingBounds['to']) {
+        $accountingNextFrom = $nextIso;
+    }
+}
 $managerHomeUrl = './manager.php?action=dashboard';
 $managerOverviewUrl = './manager.php?action=overview&idbl=' . strtolower(date("M")) . date("Y");
+$managerAccountingUrl = './manager.php?action=accounting&idbl=' . urlencode($accountingMonthKey);
+$accountingNoticeMsg = '';
+$accountingNoticeError = '';
+$accountingNoticeTargets = mikhmon_accounting_notification_targets($accountingSummary, $managerSellersData, $accountingSeller);
+if ($manager_logged_in && $action === 'accounting' && isset($_POST['send_accounting_notice'])) {
+    csrf_guard();
+    $sentCount = mikhmon_accounting_publish_notifications(
+        'manager',
+        isset($managerName) ? $managerName : 'Gérant',
+        isset($manager_session_name) ? $manager_session_name : $session,
+        $managerSellersData,
+        $accountingNoticeTargets,
+        $accountingFrom,
+        $accountingTo,
+        $accountingSettlementTime,
+        $accountingNextFrom,
+        $accountingNextTo,
+        $accountingNextSettlementTime
+    );
+    if ($sentCount > 0) {
+        $accountingNoticeMsg = $sentCount . ' notification(s) envoyée(s) aux vendeurs concernés.';
+    } else {
+        $accountingNoticeError = 'Aucun vendeur concerné par cette période.';
+    }
+}
 ?>
 <!DOCTYPE html>
 <html>
@@ -546,6 +620,39 @@ $managerOverviewUrl = './manager.php?action=overview&idbl=' . strtolower(date("M
 .acct-total-row td {
   background:#5b2c8d !important;
   color:#fff !important;
+}
+.accounting-settlement-chip {
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  padding:3px 9px;
+  border-radius:14px;
+  background:#edf2f7;
+  color:#243447;
+  font-size:12px;
+  font-weight:bold;
+  white-space:nowrap;
+}
+.accounting-mobile-settlement {
+  display:none;
+  margin-top:6px;
+}
+.accounting-notice-box {
+  border:1px solid #d7deea;
+  border-left:4px solid #34495e;
+  border-radius:8px;
+  background:#f8fafc;
+  padding:14px 16px;
+  margin-bottom:16px;
+}
+.accounting-notice-preview {
+  background:#fff;
+  border:1px solid #e2e8f0;
+  border-radius:6px;
+  padding:10px 12px;
+  color:#243447;
+  line-height:1.45;
+  margin:10px 0;
 }
 .mgr-month-filter {
   display:flex;
@@ -668,6 +775,69 @@ $managerOverviewUrl = './manager.php?action=overview&idbl=' . strtolower(date("M
   .mgr-ticket-links { grid-template-columns:1fr; }
   .mgr-month-filter .btn { flex:1 1 calc(33.333% - 8px); text-align:center; }
   .mgr-light-profile-card table { min-width:620px; }
+  .accounting-responsive-table {
+    min-width:0 !important;
+    border:0 !important;
+  }
+  .accounting-responsive-table thead {
+    display:none;
+  }
+  .accounting-responsive-table,
+  .accounting-responsive-table tbody,
+  .accounting-responsive-table tfoot,
+  .accounting-responsive-table tr,
+  .accounting-responsive-table td {
+    display:block;
+    width:100%;
+    box-sizing:border-box;
+  }
+  .accounting-responsive-table tr {
+    margin-bottom:10px;
+    border:1px solid #d7deea;
+    border-radius:8px;
+    overflow:hidden;
+    background:#fff;
+  }
+  .accounting-responsive-table td {
+    display:flex;
+    justify-content:space-between;
+    gap:14px;
+    text-align:right !important;
+    padding:9px 12px !important;
+    border-left:0 !important;
+    border-right:0 !important;
+  }
+  .accounting-responsive-table td:before {
+    content:attr(data-label);
+    flex:0 0 42%;
+    color:#64748b;
+    font-weight:bold;
+    text-align:left;
+  }
+  .accounting-responsive-table .accounting-seller-cell {
+    display:block;
+    text-align:left !important;
+  }
+  .accounting-responsive-table .accounting-seller-cell:before {
+    content:'';
+    display:none;
+  }
+  .accounting-responsive-table .accounting-time-cell {
+    display:none;
+  }
+  .accounting-mobile-settlement {
+    display:inline-flex;
+  }
+  .accounting-responsive-table tfoot tr {
+    background:#5b2c8d;
+  }
+  .accounting-responsive-table tfoot td {
+    background:#5b2c8d !important;
+    color:#fff !important;
+  }
+  .accounting-responsive-table tfoot td:before {
+    color:rgba(255,255,255,.82);
+  }
   #navbar {
     height:auto !important;
     padding-bottom:8px;
@@ -691,6 +861,7 @@ $managerOverviewUrl = './manager.php?action=overview&idbl=' . strtolower(date("M
   }
   }
   </style>
+  <link rel="stylesheet" href="css/mikhmon-responsive.css">
   <link rel="stylesheet" href="css/mikhmon-portal.css">
 </head>
 <body class="manager-portal">
@@ -711,6 +882,7 @@ $managerOverviewUrl = './manager.php?action=overview&idbl=' . strtolower(date("M
         <span class="mgr-badge"><i class="fa fa-briefcase"></i> <?= isset($_manager) ? $_manager : 'Manager' ?></span>
       </div>
       <form autocomplete="off" action="" method="post" class="portal-auth-form">
+        <?= csrf_field() ?>
         <div class="portal-auth-field">
           <input class="form-control portal-auth-input" type="text" name="manager_user"
                  placeholder="<?= isset($_seller_id) ? $_seller_id : 'Identifier' ?>" required autofocus>
@@ -777,7 +949,7 @@ $managerOverviewUrl = './manager.php?action=overview&idbl=' . strtolower(date("M
     <i class="fa fa-bar-chart"></i> <?= isset($_manager_overview) ? $_manager_overview : 'Vendors Overview' ?>
   </a>
 
-  <a href="./manager.php?action=accounting&idbl=<?= strtolower(date("M")).date("Y") ?>"
+  <a href="<?= $managerAccountingUrl ?>"
      class="menu<?= ($action==='accounting') ? ' active' : '' ?>">
     <i class="fa fa-calculator"></i> <?= isset($_manager_accounting) ? $_manager_accounting : 'Accounting' ?>
   </a>
@@ -844,6 +1016,26 @@ if (in_array($action, ['overview','accounting'])) {
     </div>
   </div>
 </div></div>
+<?php elseif ($manager_connection_error !== ''): ?>
+<div class="row"><div class="col-12">
+  <div class="card">
+    <div class="card-header"><h3 style="margin:0;"><i class="fa fa-exclamation-triangle"></i> Routeur indisponible</h3></div>
+    <div class="card-body">
+      <div class="portal-note-card">
+        <b><?= htmlspecialchars($manager_connection_error) ?></b><br>
+        Le portail gérant reste ouvert, mais les ventes, stocks, impressions et transferts sont désactivés tant que Mikhmon ne peut pas joindre RouterOS.
+      </div>
+      <div class="mgr-quick-actions" style="margin-top:16px;">
+        <a href="./manager.php?action=dashboard" class="btn bg-primary" style="padding:10px 16px;">
+          <i class="fa fa-refresh"></i> Réessayer
+        </a>
+        <a href="./manager.php?action=logout" class="btn" style="background:#34495e;color:#fff;padding:10px 16px;">
+          <i class="fa fa-sign-out"></i> <?= $_logout ?>
+        </a>
+      </div>
+    </div>
+  </div>
+</div></div>
 <?php elseif ($action === 'dashboard'): ?>
 <!-- ══════════════════════════ ACCUEIL GÉRANT ═════════════════════════════ -->
 <div class="row"><div class="col-12">
@@ -867,11 +1059,11 @@ if (in_array($action, ['overview','accounting'])) {
       <div style="flex:1;min-width:170px;background:#fdf2e9;border-radius:8px;padding:14px 16px;border-left:4px solid #d35400;">
         <div style="font-size:11px;color:#d35400;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;"><i class="fa fa-sun-o"></i> Aujourd'hui</div>
         <div style="font-size:24px;font-weight:bold;color:#d35400;"><?= $managerTodayTickets ?> <small style="font-size:13px;">vcr</small></div>
-        <div style="font-size:12px;color:#a04000;"><?= $currency ?> <?= number_format($managerTodayRevenue,0,',',' ') ?></div>
+        <div style="font-size:12px;color:#a04000;"><?= mikhmon_format_money_amount($managerTodayRevenue, $currency, $cekindo) ?></div>
       </div>
       <div style="flex:1;min-width:170px;background:#fdeef7;border-radius:8px;padding:14px 16px;border-left:4px solid #c0398f;">
         <div style="font-size:11px;color:#c0398f;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;"><i class="fa fa-percent"></i> Commission aujourd'hui</div>
-        <div style="font-size:24px;font-weight:bold;color:#c0398f;"><?= $currency ?> <?= number_format($managerTodayCommission,0,',',' ') ?></div>
+        <div style="font-size:24px;font-weight:bold;color:#c0398f;"><?= mikhmon_format_money_amount($managerTodayCommission, $currency, $cekindo) ?></div>
       </div>
       <div style="flex:1;min-width:170px;background:#e8f8f5;border-radius:8px;padding:14px 16px;border-left:4px solid #27ae60;">
         <div style="font-size:11px;color:#27ae60;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;"><i class="fa fa-archive"></i> Stock total</div>
@@ -880,11 +1072,11 @@ if (in_array($action, ['overview','accounting'])) {
       <div style="flex:1;min-width:170px;background:#f3e8fd;border-radius:8px;padding:14px 16px;border-left:4px solid #8e44ad;">
         <div style="font-size:11px;color:#8e44ad;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;"><i class="fa fa-calendar"></i> Ce mois</div>
         <div style="font-size:24px;font-weight:bold;color:#8e44ad;"><?= $managerMonthTickets ?> <small style="font-size:13px;">vcr</small></div>
-        <div style="font-size:12px;color:#6c3483;"><?= $currency ?> <?= number_format($managerMonthRevenue,0,',',' ') ?></div>
+        <div style="font-size:12px;color:#6c3483;"><?= mikhmon_format_money_amount($managerMonthRevenue, $currency, $cekindo) ?></div>
       </div>
       <div style="flex:1;min-width:170px;background:#fff8e1;border-radius:8px;padding:14px 16px;border-left:4px solid #e67e22;">
         <div style="font-size:11px;color:#e67e22;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;"><i class="fa fa-gift"></i> Commission du mois</div>
-        <div style="font-size:24px;font-weight:bold;color:#e67e22;"><?= $currency ?> <?= number_format($managerMonthCommission,0,',',' ') ?></div>
+        <div style="font-size:24px;font-weight:bold;color:#e67e22;"><?= mikhmon_format_money_amount($managerMonthCommission, $currency, $cekindo) ?></div>
       </div>
     </div>
 
@@ -892,7 +1084,7 @@ if (in_array($action, ['overview','accounting'])) {
       <a href="<?= $managerOverviewUrl ?>" class="mgr-action-card" style="background:#4aa3d6;">
         <i class="fa fa-line-chart"></i> Vue d'ensemble des vendeurs
       </a>
-      <a href="./manager.php?action=accounting&idbl=<?= strtolower(date("M")).date("Y") ?>" class="mgr-action-card" style="background:#8e44ad;">
+      <a href="<?= $managerAccountingUrl ?>" class="mgr-action-card" style="background:#8e44ad;">
         <i class="fa fa-calculator"></i> Comptabilité
       </a>
       <a href="./manager.php?action=transfer" class="mgr-action-card" style="background:#df8237;">
@@ -941,11 +1133,11 @@ if (in_array($action, ['overview','accounting'])) {
           <tr>
             <td><b><?= htmlspecialchars($sd['name']) ?></b><br><small><code><?= htmlspecialchars($sk) ?></code></small></td>
             <td class="text-center"><?= $ss['today'] ?></td>
-            <td class="text-center"><?= $currency ?> <?= number_format($ss['rev_today'],0,',',' ') ?></td>
-            <td class="text-center" style="color:#8e44ad;font-weight:bold;"><?= $currency ?> <?= number_format($todayComm,0,',',' ') ?></td>
+            <td class="text-center"><?= mikhmon_format_money_amount($ss['rev_today'], $currency, $cekindo) ?></td>
+            <td class="text-center" style="color:#8e44ad;font-weight:bold;"><?= mikhmon_format_money_amount($todayComm, $currency, $cekindo) ?></td>
             <td class="text-center"><?= $ss['total'] ?></td>
-            <td class="text-center"><?= $currency ?> <?= number_format($ss['rev_total'],0,',',' ') ?></td>
-            <td class="text-center" style="color:#8e44ad;font-weight:bold;"><?= $currency ?> <?= number_format($monthComm,0,',',' ') ?></td>
+            <td class="text-center"><?= mikhmon_format_money_amount($ss['rev_total'], $currency, $cekindo) ?></td>
+            <td class="text-center" style="color:#8e44ad;font-weight:bold;"><?= mikhmon_format_money_amount($monthComm, $currency, $cekindo) ?></td>
             <td class="text-center"><?= $stk ?></td>
           </tr>
           <?php endforeach; ?>
@@ -1021,12 +1213,12 @@ if (in_array($action, ['overview','accounting'])) {
       <div style="flex:1;min-width:150px;background:#f3e8fd;border-radius:8px;padding:12px 16px;border-left:4px solid #8e44ad;">
         <div style="font-size:11px;color:#8e44ad;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;"><i class="fa fa-sun-o"></i> Aujourd'hui</div>
         <div style="font-size:22px;font-weight:bold;color:#8e44ad;"><?= $gtAllToday ?> <small style="font-size:13px;">vcr</small></div>
-        <div style="font-size:13px;color:#6c3483;"><?= $currency ?> <?= number_format($gtAllRevToday,0,',',' ') ?></div>
+        <div style="font-size:13px;color:#6c3483;"><?= mikhmon_format_money_amount($gtAllRevToday, $currency, $cekindo) ?></div>
       </div>
       <div style="flex:1;min-width:150px;background:#eaf4fb;border-radius:8px;padding:12px 16px;border-left:4px solid #2980b9;">
         <div style="font-size:11px;color:#2980b9;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;"><i class="fa fa-calendar"></i> Ce mois</div>
         <div style="font-size:22px;font-weight:bold;color:#2980b9;"><?= $gtAllMonth ?> <small style="font-size:13px;">vcr</small></div>
-        <div style="font-size:13px;color:#1a6fa0;"><?= $currency ?> <?= number_format($gtAllRevMonth,0,',',' ') ?></div>
+        <div style="font-size:13px;color:#1a6fa0;"><?= mikhmon_format_money_amount($gtAllRevMonth, $currency, $cekindo) ?></div>
       </div>
       <div style="flex:1;min-width:150px;background:#e8f8f5;border-radius:8px;padding:12px 16px;border-left:4px solid #27ae60;">
         <div style="font-size:11px;color:#27ae60;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;"><i class="fa fa-archive"></i> Stock total</div>
@@ -1042,7 +1234,7 @@ if (in_array($action, ['overview','accounting'])) {
               $gtComm += $rev * $rate / 100;
           }
         ?>
-        <div style="font-size:22px;font-weight:bold;color:#e67e22;"><?= $currency ?> <?= number_format($gtComm,0,',',' ') ?></div>
+        <div style="font-size:22px;font-weight:bold;color:#e67e22;"><?= mikhmon_format_money_amount($gtComm, $currency, $cekindo) ?></div>
       </div>
     </div>
 
@@ -1061,18 +1253,18 @@ if (in_array($action, ['overview','accounting'])) {
           </span>
           <?php if ($unitPrice > 0): ?>
           <span style="margin-left:10px;background:#8e44ad;color:#fff;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:bold;">
-            <?= $currency ?> <?= number_format($unitPrice,0,',',' ') ?> / vcr
+            <?= mikhmon_format_money_amount($unitPrice, $currency, $cekindo) ?> / vcr
           </span>
           <?php endif; ?>
         </div>
         <div class="prof-card-stats" style="display:flex;gap:14px;font-size:13px;">
           <span style="color:#c0392b;font-weight:bold;">
             <i class="fa fa-sun-o"></i> <?= $ps['today'] ?> vcr
-            <small class="mgr-soft-note" style="font-weight:normal;">/ <?= $currency ?> <?= number_format($ps['rev_today'],0,',',' ') ?></small>
+            <small class="mgr-soft-note" style="font-weight:normal;">/ <?= mikhmon_format_money_amount($ps['rev_today'], $currency, $cekindo) ?></small>
           </span>
           <span style="color:#2980b9;font-weight:bold;">
             <i class="fa fa-calendar"></i> <?= $ps['total'] ?> vcr
-            <small class="mgr-soft-note" style="font-weight:normal;">/ <?= $currency ?> <?= number_format($ps['rev_total'],0,',',' ') ?></small>
+            <small class="mgr-soft-note" style="font-weight:normal;">/ <?= mikhmon_format_money_amount($ps['rev_total'], $currency, $cekindo) ?></small>
           </span>
           <span style="color:#27ae60;font-weight:bold;">
             <i class="fa fa-archive"></i> <?= $profStock ?> stock
@@ -1107,7 +1299,7 @@ if (in_array($action, ['overview','accounting'])) {
                 <?php endif; ?>
               </td>
               <td class="text-center" style="color:#c0392b;">
-                <?= $vd['today'] > 0 ? $currency . ' ' . number_format($vd['today'] * $vd['price'],0,',',' ') : '<span style="color:#ccc;">—</span>' ?>
+                <?= $vd['today'] > 0 ? mikhmon_format_money_amount($vd['today'] * $vd['price'], $currency, $cekindo) : '<span style="color:#ccc;">—</span>' ?>
               </td>
               <td class="text-center">
                 <?php if ($vd['total'] > 0): ?>
@@ -1117,7 +1309,7 @@ if (in_array($action, ['overview','accounting'])) {
                 <?php endif; ?>
               </td>
               <td class="text-center" style="color:#2980b9;">
-                <?= $vd['total'] > 0 ? $currency . ' ' . number_format($vd['total'] * $vd['price'],0,',',' ') : '<span style="color:#ccc;">—</span>' ?>
+                <?= $vd['total'] > 0 ? mikhmon_format_money_amount($vd['total'] * $vd['price'], $currency, $cekindo) : '<span style="color:#ccc;">—</span>' ?>
               </td>
               <td class="text-center">
                 <?php if ($vd['stock'] > 0): ?>
@@ -1139,9 +1331,9 @@ if (in_array($action, ['overview','accounting'])) {
             <tr class="mgr-profile-total-row">
               <td><i class="fa fa-sigma"></i> TOTAL</td>
               <td class="text-center"><?= $profTotToday ?></td>
-              <td class="text-center"><?= $currency ?> <?= number_format($profTotToday * $unitPrice,0,',',' ') ?></td>
+              <td class="text-center"><?= mikhmon_format_money_amount($profTotToday * $unitPrice, $currency, $cekindo) ?></td>
               <td class="text-center"><?= $profTotMonth ?></td>
-              <td class="text-center"><?= $currency ?> <?= number_format($profTotMonth * $unitPrice,0,',',' ') ?></td>
+              <td class="text-center"><?= mikhmon_format_money_amount($profTotMonth * $unitPrice, $currency, $cekindo) ?></td>
               <td class="text-center"><?= $profTotStock ?></td>
             </tr>
           </tfoot>
@@ -1174,7 +1366,7 @@ if (in_array($action, ['overview','accounting'])) {
   </div>
   <div class="card-body">
 
-    <!-- Date filter -->
+    <!-- Filtre mois -->
     <div style="margin-bottom:16px;">
       <div class="mgr-month-filter">
         <?php
@@ -1188,68 +1380,201 @@ if (in_array($action, ['overview','accounting'])) {
       </div>
     </div>
 
-    <div class="table-responsive">
-    <table class="table table-bordered portal-table-min-md">
-      <thead class="thead-light">
-        <tr>
-          <th><?= isset($_seller) ? $_seller : 'Vendor' ?></th>
-          <th class="text-center"><?= isset($_today) ? $_today : 'Today' ?> (vcr)</th>
-          <th class="text-center"><?= isset($_seller_ca) ? $_seller_ca : 'Rev.' ?> <?= isset($_today) ? $_today : 'Today' ?></th>
-          <th class="text-center"><?= isset($_this_month) ? $_this_month : 'Month' ?> (vcr)</th>
-          <th class="text-center"><?= isset($_seller_ca) ? $_seller_ca : 'Rev.' ?> <?= isset($_this_month) ? $_this_month : 'Month' ?></th>
-          <th class="text-center"><?= isset($_transfer_available) ? $_transfer_available : 'Stock' ?></th>
-          <th class="text-center" style="color:#8e44ad;"><i class="fa fa-percent"></i> Commission</th>
-        </tr>
-      </thead>
-      <tbody>
-        <?php
-          $gtToday = 0; $gtRevToday = 0;
-          $gtMonth = 0; $gtRevMonth = 0;
-          $gtStock = 0; $gtCommission = 0.0;
-          foreach ($managerSellersData as $sk => $sd):
-            $ss   = isset($sellerStats[$sk]) ? $sellerStats[$sk] : array('total'=>0,'today'=>0,'rev_total'=>0,'rev_today'=>0);
-            $stk  = isset($allSellerStock[$sk]) ? array_sum($allSellerStock[$sk]) : 0;
-            $rate = isset($sd['commission']) ? (int)$sd['commission'] : 0;
-            $comm = $ss['rev_total'] * $rate / 100;
-            $gtToday    += $ss['today'];
-            $gtRevToday += $ss['rev_today'];
-            $gtMonth    += $ss['total'];
-            $gtRevMonth += $ss['rev_total'];
-            $gtStock    += $stk;
-            $gtCommission += $comm;
-        ?>
-        <tr>
-          <td><b><?= htmlspecialchars($sd['name']) ?></b><br>
-              <small class="portal-muted-light" style="color:#999;"><code><?= htmlspecialchars($sk) ?></code></small></td>
-          <td class="text-center"><?= $ss['today'] ?></td>
-          <td class="text-center"><?= $currency ?> <?= number_format($ss['rev_today'],0,',',' ') ?></td>
-          <td class="text-center"><?= $ss['total'] ?></td>
-          <td class="text-center"><?= $currency ?> <?= number_format($ss['rev_total'],0,',',' ') ?></td>
-          <td class="text-center"><?= $stk ?></td>
-          <td class="text-center">
-            <?php if ($rate > 0): ?>
-              <span style="color:#8e44ad;font-weight:bold;"><?= $currency ?> <?= number_format($comm,0,',',' ') ?></span><br>
-              <small class="portal-muted-light" style="color:#999;"><?= $rate ?>%</small>
-            <?php else: ?>
-              <span class="portal-empty-note" style="color:#bbb;">—</span>
-            <?php endif; ?>
-          </td>
-        </tr>
-        <?php endforeach; ?>
-      </tbody>
-      <tfoot>
-        <tr class="acct-total-row">
-          <td><i class="fa fa-sigma"></i> <?= isset($_total) ? $_total : 'TOTAL' ?></td>
-          <td class="text-center"><?= $gtToday ?></td>
-          <td class="text-center"><?= $currency ?> <?= number_format($gtRevToday,0,',',' ') ?></td>
-          <td class="text-center"><?= $gtMonth ?></td>
-          <td class="text-center"><?= $currency ?> <?= number_format($gtRevMonth,0,',',' ') ?></td>
-          <td class="text-center"><?= $gtStock ?></td>
-          <td class="text-center"><?= $currency ?> <?= number_format($gtCommission,0,',',' ') ?></td>
-        </tr>
-      </tfoot>
-    </table>
+    <div class="portal-note-card" style="margin-bottom:16px;text-align:left;">
+      <b><i class="fa fa-scissors"></i> Comptabilité par arrêt de période</b><br>
+      Choisissez une période, puis chaque journée est séparée avec son total par vendeur. Après avoir fait les comptes jusqu'à une date, utilisez le lien suivant pour repartir du lendemain sans mélanger les périodes déjà réglées.
     </div>
+
+    <form method="get" action="./manager.php" class="portal-card-section" style="margin-bottom:18px;">
+      <input type="hidden" name="action" value="accounting">
+      <input type="hidden" name="idbl" value="<?= htmlspecialchars($accountingMonthKey) ?>">
+      <div class="portal-filter-grid">
+        <div class="portal-filter-item">
+          <label class="transfer-label"><i class="fa fa-calendar-o"></i> Début</label>
+          <input type="date" name="from" class="form-control" value="<?= htmlspecialchars($accountingFrom) ?>">
+        </div>
+        <div class="portal-filter-item">
+          <label class="transfer-label"><i class="fa fa-calendar-check-o"></i> Arrêt</label>
+          <input type="date" name="to" class="form-control" value="<?= htmlspecialchars($accountingTo) ?>">
+        </div>
+        <div class="portal-filter-item">
+          <label class="transfer-label"><i class="fa fa-user"></i> Vendeur</label>
+          <select name="seller" class="form-control">
+            <option value="">Tous les vendeurs</option>
+            <?php foreach ($managerSellersData as $sk => $sd): ?>
+              <option value="<?= htmlspecialchars($sk) ?>" <?= $accountingSeller === $sk ? 'selected' : '' ?>>
+                <?= htmlspecialchars($sd['name']) ?>
+              </option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+        <div class="portal-filter-item">
+          <label class="transfer-label"><i class="fa fa-clock-o"></i> Heure du compte</label>
+          <input type="time" name="settled_at" class="form-control" step="60" value="<?= htmlspecialchars(substr($accountingSettlementTime, 0, 5)) ?>">
+        </div>
+        <div class="portal-filter-item">
+          <label class="transfer-label"><i class="fa fa-clock-o"></i> Heure du prochain compte</label>
+          <input type="time" name="next_settled_at" class="form-control" step="60" value="<?= htmlspecialchars(substr($accountingNextSettlementTime, 0, 5)) ?>">
+        </div>
+      </div>
+      <button type="submit" class="btn bg-primary" style="margin-top:8px;">
+        <i class="fa fa-filter"></i> Afficher les comptes
+      </button>
+      <a class="btn" style="margin-top:8px;background:#eee;color:#333;" href="./manager.php?action=accounting&idbl=<?= urlencode($accountingMonthKey) ?>">
+        <i class="fa fa-refresh"></i> Mois complet
+      </a>
+    </form>
+
+    <?php
+      $acctTotal = $accountingSummary['total'];
+      $acctSellerLabel = $accountingSeller !== '' && isset($managerSellersData[$accountingSeller])
+        ? $managerSellersData[$accountingSeller]['name']
+        : 'Tous les vendeurs';
+    ?>
+    <div class="mgr-summary-cards" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;">
+      <div style="flex:1;min-width:170px;background:#eaf4fb;border-radius:8px;padding:14px 16px;border-left:4px solid #2980b9;">
+        <div style="font-size:11px;color:#2980b9;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;"><i class="fa fa-calendar"></i> Période arrêtée</div>
+        <div style="font-size:18px;font-weight:bold;color:#2980b9;"><?= htmlspecialchars($accountingFrom) ?> → <?= htmlspecialchars($accountingTo) ?></div>
+        <div style="font-size:12px;color:#1a6fa0;"><?= htmlspecialchars($acctSellerLabel) ?></div>
+      </div>
+      <div style="flex:1;min-width:150px;background:#f3e8fd;border-radius:8px;padding:14px 16px;border-left:4px solid #8e44ad;">
+        <div style="font-size:11px;color:#8e44ad;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;"><i class="fa fa-ticket"></i> Tickets</div>
+        <div style="font-size:24px;font-weight:bold;color:#8e44ad;"><?= $acctTotal['count'] ?> <small style="font-size:13px;">vcr</small></div>
+      </div>
+      <div style="flex:1;min-width:150px;background:#e8f8f5;border-radius:8px;padding:14px 16px;border-left:4px solid #27ae60;">
+        <div style="font-size:11px;color:#27ae60;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;"><i class="fa fa-money"></i> Total encaissé</div>
+        <div style="font-size:22px;font-weight:bold;color:#27ae60;"><?= mikhmon_format_money_amount($acctTotal['revenue'], $currency, $cekindo) ?></div>
+      </div>
+      <div style="flex:1;min-width:150px;background:#fff8e1;border-radius:8px;padding:14px 16px;border-left:4px solid #e67e22;">
+        <div style="font-size:11px;color:#e67e22;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;"><i class="fa fa-percent"></i> Commissions</div>
+        <div style="font-size:22px;font-weight:bold;color:#e67e22;"><?= mikhmon_format_money_amount($acctTotal['commission'], $currency, $cekindo) ?></div>
+      </div>
+      <div style="flex:1;min-width:150px;background:#fdeef7;border-radius:8px;padding:14px 16px;border-left:4px solid #c0398f;">
+        <div style="font-size:11px;color:#c0398f;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;"><i class="fa fa-bank"></i> Net à remettre</div>
+        <div style="font-size:22px;font-weight:bold;color:#c0398f;"><?= mikhmon_format_money_amount($acctTotal['net'], $currency, $cekindo) ?></div>
+      </div>
+      <div style="flex:1;min-width:150px;background:#eef2f7;border-radius:8px;padding:14px 16px;border-left:4px solid #34495e;">
+        <div style="font-size:11px;color:#34495e;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;"><i class="fa fa-clock-o"></i> Heure du compte</div>
+        <div style="font-size:22px;font-weight:bold;color:#34495e;"><?= htmlspecialchars($accountingSettlementTime) ?></div>
+      </div>
+    </div>
+
+    <?php if ($accountingNextFrom !== ''): ?>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+      <a class="btn" style="background:#5b2c8d;color:#fff;" href="./manager.php?action=accounting&idbl=<?= urlencode($accountingMonthKey) ?>&from=<?= urlencode($accountingNextFrom) ?>&to=<?= urlencode($accountingNextFrom) ?>&settled_at=<?= urlencode($accountingNextSettlementTime) ?>&next_settled_at=<?= urlencode($accountingNextSettlementTime) ?><?= $accountingSeller !== '' ? '&seller=' . urlencode($accountingSeller) : '' ?>">
+        <i class="fa fa-step-forward"></i> Jour suivant : <?= htmlspecialchars($accountingNextFrom) ?>
+      </a>
+      <a class="btn" style="background:#34495e;color:#fff;" href="./manager.php?action=accounting&idbl=<?= urlencode($accountingMonthKey) ?>&from=<?= urlencode($accountingNextFrom) ?>&to=<?= urlencode($accountingNextTo) ?>&settled_at=<?= urlencode($accountingNextSettlementTime) ?>&next_settled_at=<?= urlencode($accountingNextSettlementTime) ?><?= $accountingSeller !== '' ? '&seller=' . urlencode($accountingSeller) : '' ?>">
+        <i class="fa fa-calendar-plus-o"></i> Reste du mois
+      </a>
+    </div>
+    <?php endif; ?>
+
+    <?php
+      $accountingNoticeSampleName = 'vendeur';
+      if (!empty($accountingNoticeTargets) && isset($managerSellersData[$accountingNoticeTargets[0]]['name'])) {
+        $accountingNoticeSampleName = $managerSellersData[$accountingNoticeTargets[0]]['name'];
+      } elseif ($accountingSeller !== '' && isset($managerSellersData[$accountingSeller]['name'])) {
+        $accountingNoticeSampleName = $managerSellersData[$accountingSeller]['name'];
+      }
+      $accountingNoticePreview = mikhmon_accounting_notification_text($accountingNoticeSampleName, $accountingFrom, $accountingTo, $accountingSettlementTime, $accountingNextFrom, $accountingNextTo, $accountingNextSettlementTime);
+    ?>
+    <div class="accounting-notice-box">
+      <b><i class="fa fa-bell"></i> Notification aux vendeurs</b>
+      <div style="font-size:12px;color:#64748b;margin-top:4px;">
+        Cibles : <?= count($accountingNoticeTargets) ?> vendeur(s) concerné(s) par cette période.
+      </div>
+      <?php if ($accountingNoticeMsg !== ''): ?>
+        <div class="bg-success" style="padding:8px 10px;border-radius:5px;margin-top:10px;"><i class="fa fa-check"></i> <?= htmlspecialchars($accountingNoticeMsg) ?></div>
+      <?php endif; ?>
+      <?php if ($accountingNoticeError !== ''): ?>
+        <div class="bg-warning" style="padding:8px 10px;border-radius:5px;margin-top:10px;"><i class="fa fa-warning"></i> <?= htmlspecialchars($accountingNoticeError) ?></div>
+      <?php endif; ?>
+      <div class="accounting-notice-preview"><?= htmlspecialchars($accountingNoticePreview) ?></div>
+      <form method="post" action="./manager.php?action=accounting&idbl=<?= urlencode($accountingMonthKey) ?>&from=<?= urlencode($accountingFrom) ?>&to=<?= urlencode($accountingTo) ?>&settled_at=<?= urlencode($accountingSettlementTime) ?>&next_settled_at=<?= urlencode($accountingNextSettlementTime) ?><?= $accountingSeller !== '' ? '&seller=' . urlencode($accountingSeller) : '' ?>" style="margin:0;">
+        <?= csrf_field() ?>
+        <input type="hidden" name="settled_at" value="<?= htmlspecialchars($accountingSettlementTime) ?>">
+        <input type="hidden" name="next_settled_at" value="<?= htmlspecialchars($accountingNextSettlementTime) ?>">
+        <button type="submit" name="send_accounting_notice" class="btn" style="background:#34495e;color:#fff;">
+          <i class="fa fa-paper-plane"></i> Notifier les vendeurs
+        </button>
+      </form>
+    </div>
+
+    <?php if (empty($accountingSummary['days'])): ?>
+      <p class="text-center" style="color:#888;padding:20px;"><i class="fa fa-info-circle"></i> Aucune période valide.</p>
+    <?php else: ?>
+      <?php foreach ($accountingSummary['days'] as $dayKey => $day): ?>
+      <div class="card box-bordered" style="margin-bottom:14px;border-left:4px solid <?= $day['total']['count'] > 0 ? '#27ae60' : '#cbd5e1' ?>;">
+        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;background:#fafafa;">
+          <h4 style="margin:0;color:#243447;">
+            <i class="fa fa-calendar"></i> <?= htmlspecialchars($day['iso']) ?>
+            <small style="color:#888;">(<?= htmlspecialchars($dayKey) ?>)</small>
+          </h4>
+          <div style="font-size:13px;color:#555;">
+            <b><?= $day['total']['count'] ?></b> vcr ·
+            <b><?= mikhmon_format_money_amount($day['total']['revenue'], $currency, $cekindo) ?></b> ·
+            Commission <?= mikhmon_format_money_amount($day['total']['commission'], $currency, $cekindo) ?> ·
+            Net <?= mikhmon_format_money_amount($day['total']['net'], $currency, $cekindo) ?> ·
+            <span class="accounting-settlement-chip"><i class="fa fa-clock-o"></i> <?= htmlspecialchars($accountingSettlementTime) ?></span>
+          </div>
+        </div>
+        <div class="card-body">
+          <?php if (empty($day['sellers'])): ?>
+            <p class="text-center" style="color:#999;margin:0;"><i class="fa fa-info-circle"></i> Aucun compte à régler pour cette journée. <span class="accounting-settlement-chip"><i class="fa fa-clock-o"></i> Heure du compte : <?= htmlspecialchars($accountingSettlementTime) ?></span></p>
+          <?php else: ?>
+          <div class="table-responsive">
+          <table class="table table-bordered portal-table-min-md accounting-responsive-table">
+            <thead class="thead-light">
+              <tr>
+                <th><?= isset($_seller) ? $_seller : 'Vendeur' ?></th>
+                <th class="text-center">Heure du compte</th>
+                <th>Profils vendus</th>
+                <th class="text-center">Tickets</th>
+                <th class="text-center">Total encaissé</th>
+                <th class="text-center">Commission</th>
+                <th class="text-center">Net à remettre</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php foreach ($day['sellers'] as $sellerRow): ?>
+              <tr>
+                <td class="accounting-seller-cell" data-label="<?= isset($_seller) ? $_seller : 'Vendeur' ?>">
+                  <b><?= htmlspecialchars($sellerRow['name']) ?></b><br>
+                  <small style="color:#888;"><code><?= htmlspecialchars($sellerRow['key']) ?></code> · <?= (int)$sellerRow['commission_rate'] ?>%</small>
+                  <span class="accounting-settlement-chip accounting-mobile-settlement"><i class="fa fa-clock-o"></i> Heure du compte : <?= htmlspecialchars($accountingSettlementTime) ?></span>
+                </td>
+                <td class="text-center accounting-time-cell" data-label="Heure du compte"><span class="accounting-settlement-chip"><i class="fa fa-clock-o"></i> <?= htmlspecialchars($accountingSettlementTime) ?></span></td>
+                <td data-label="Profils vendus">
+                  <?php foreach ($sellerRow['profiles'] as $profileName => $profileTotal): ?>
+                    <span style="display:inline-block;margin:2px 4px 2px 0;padding:2px 8px;border-radius:12px;background:#eef2f7;color:#243447;font-size:12px;">
+                      <?= htmlspecialchars($profileName) ?>: <?= (int)$profileTotal['count'] ?>
+                    </span>
+                  <?php endforeach; ?>
+                </td>
+                <td class="text-center" data-label="Tickets"><?= (int)$sellerRow['count'] ?></td>
+                <td class="text-center" data-label="Total encaissé"><?= mikhmon_format_money_amount($sellerRow['revenue'], $currency, $cekindo) ?></td>
+                <td class="text-center" data-label="Commission" style="color:#e67e22;font-weight:bold;"><?= mikhmon_format_money_amount($sellerRow['commission'], $currency, $cekindo) ?></td>
+                <td class="text-center" data-label="Net à remettre" style="color:#c0398f;font-weight:bold;"><?= mikhmon_format_money_amount($sellerRow['net'], $currency, $cekindo) ?></td>
+              </tr>
+              <?php endforeach; ?>
+            </tbody>
+            <tfoot>
+              <tr class="acct-total-row">
+                <td colspan="3" data-label="Arrêt"><i class="fa fa-stop-circle"></i> Arrêt du jour · <?= htmlspecialchars($accountingSettlementTime) ?></td>
+                <td class="text-center" data-label="Tickets"><?= (int)$day['total']['count'] ?></td>
+                <td class="text-center" data-label="Total encaissé"><?= mikhmon_format_money_amount($day['total']['revenue'], $currency, $cekindo) ?></td>
+                <td class="text-center" data-label="Commission"><?= mikhmon_format_money_amount($day['total']['commission'], $currency, $cekindo) ?></td>
+                <td class="text-center" data-label="Net à remettre"><?= mikhmon_format_money_amount($day['total']['net'], $currency, $cekindo) ?></td>
+              </tr>
+            </tfoot>
+          </table>
+          </div>
+          <?php endif; ?>
+        </div>
+      </div>
+      <?php endforeach; ?>
+    <?php endif; ?>
 
   </div>
 </div>
