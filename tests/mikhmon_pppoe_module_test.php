@@ -88,30 +88,25 @@ foreach ($dashboardNeedles as $needle) {
   }
 }
 
-if (strpos($aload, 'id="r_2" class="row') === false && strpos($aload, 'id="r_2"class="row') === false) {
-  fwrite(STDERR, 'dashboard ajax hotspot refresh must keep PPPoE inside the #r_2 replacement row' . PHP_EOL);
+if (strpos($aload, 'id="r_pppoe" class="row dashboard-pppoe-row') === false) {
+  fwrite(STDERR, 'dashboard ajax refresh must expose a separate PPPoE replacement row' . PHP_EOL);
   exit(1);
 }
 
-if (strpos($aload, 'id="r_2" class="card') !== false) {
-  fwrite(STDERR, 'dashboard ajax hotspot refresh must not bind #r_2 to the hotspot-only card' . PHP_EOL);
+if (strpos($aload, 'dashboard-pppoe-card') === false || strpos($home, 'dashboard-pppoe-card') === false) {
+  fwrite(STDERR, 'dashboard PPPoE card must use its own container class' . PHP_EOL);
   exit(1);
 }
 
-if (!preg_match('/<\/div>\s*<\/div>\s*<\/div>\s*<div class="card">\s*<div class="card-header"><h3><i class="fa fa-exchange"/', $aload)) {
-  fwrite(STDERR, 'dashboard ajax hotspot card must close before the PPPoE card' . PHP_EOL);
+if (strpos($index, '#r_pppoe') === false) {
+  fwrite(STDERR, 'dashboard PPPoE container must refresh independently from revenue' . PHP_EOL);
   exit(1);
 }
 
-$r2Start = strpos($aload, '<div id="r_2" class="row');
-$pppoeHeader = strpos($aload, '<div class="card-header"><h3><i class="fa fa-exchange"', $r2Start);
-$beforePppoeHeader = substr($aload, $r2Start, $pppoeHeader - $r2Start);
-$pppoeCardStart = strrpos($beforePppoeHeader, '<div class="card">');
-$hotspotFragment = substr($beforePppoeHeader, 0, $pppoeCardStart);
-preg_match_all('/<div\b/', $hotspotFragment, $hotspotOpenDivs);
-preg_match_all('/<\/div>/', $hotspotFragment, $hotspotCloseDivs);
-if (count($hotspotOpenDivs[0]) !== count($hotspotCloseDivs[0]) + 1) {
-  fwrite(STDERR, 'dashboard ajax hotspot card div structure is not balanced before PPPoE card' . PHP_EOL);
+$rPppoeStart = strpos($aload, 'id="r_pppoe" class="row dashboard-pppoe-row');
+$r2Start = strpos($aload, 'id="r_2" class="row');
+if ($rPppoeStart === false || $r2Start === false || $rPppoeStart > $r2Start) {
+  fwrite(STDERR, 'dashboard PPPoE ajax row must be separate and before the hotspot row' . PHP_EOL);
   exit(1);
 }
 

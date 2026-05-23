@@ -205,10 +205,111 @@ img {
 
 /* ── 14. NAVBAR SAFE AREA ────────────────────────────────────────── */
 @media screen and (max-width: 749px) {
+  #navbar.navbar {
+    display: flex;
+    align-items: center;
+    height: 50px;
+    overflow: visible;
+  }
+
   .navbar-left,
   .navbar-right {
     max-width: 100%;
     overflow: hidden;
+  }
+
+  #navbar .navbar-left {
+    display: flex;
+    align-items: center;
+    flex: 0 0 44px;
+    min-width: 44px;
+    overflow: visible;
+  }
+
+  #navbar .navbar-left #openNav {
+    display: block !important;
+    position: relative;
+    top: auto;
+    left: auto;
+    width: 44px;
+    min-width: 44px;
+    padding: 14px 0;
+    text-align: center;
+  }
+
+  #navbar .navbar-left #brand,
+  #navbar .navbar-left #closeNav,
+  #navbar .navbar-left #cpage {
+    display: none !important;
+  }
+
+  #navbar .navbar-left #cpage {
+    display: none !important;
+  }
+
+  #navbar .navbar-right {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: calc(100% - 44px);
+    align-items: center;
+    justify-content: flex-end;
+    gap: 2px;
+    margin-left: 0;
+    padding-left: 0;
+    padding-right: 4px;
+  }
+
+  #navbar .navbar-right a {
+    flex: 0 1 auto;
+    min-width: 0;
+    padding: 14px 6px;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  #navbar .navbar-right .ses {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 104px;
+    margin-top: 0;
+    font-size: 12px;
+    text-align: center;
+  }
+
+  #navbar .navbar-right .connect.optfa {
+    max-width: 130px;
+  }
+}
+
+/* ── 14b. DASHBOARD PPPoE – SEPARATE FROM REVENUE ───────────────── */
+.dashboard-pppoe-row {
+  clear: both;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.dashboard-pppoe-row > .col-12,
+.dashboard-pppoe-card {
+  box-sizing: border-box;
+}
+
+@media screen and (max-width: 749px) {
+  .dashboard-pppoe-row > .col-12 {
+    float: none;
+    width: 100%;
+  }
+
+  .dashboard-pppoe-card .dashboard-hotspot-grid > .col-3 {
+    width: 50%;
+  }
+}
+
+@media screen and (max-width: 480px) {
+  .dashboard-pppoe-card .dashboard-hotspot-grid > .col-3 {
+    width: 100%;
   }
 }
 

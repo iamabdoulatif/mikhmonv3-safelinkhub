@@ -1411,15 +1411,10 @@
     display: none !important;
   }
 
-  /* Affiche le titre de page courante dans la navbar sur mobile */
+  /* Le titre de page mobile surcharge la barre et reste dans le menu. */
   .seller-portal #cpage,
   .manager-portal #cpage {
-    display: block !important;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 160px;
-    font-size: 13px;
+    display: none !important;
   }
 
   .dashboard-top-row > .col-4,
