@@ -9,19 +9,9 @@ if ($manager === false || $responsive === false) {
     exit(1);
 }
 
-$managerChecks = array(
-    'accounting shell class' => 'mgr-accounting-shell',
-    'accounting help class' => 'mgr-accounting-help',
-    'accounting form class' => 'mgr-accounting-form',
-    'accounting filter actions class' => 'mgr-accounting-actions',
-    'next period actions class' => 'mgr-accounting-next-actions',
-);
-
-foreach ($managerChecks as $label => $needle) {
-    if (strpos($manager, $needle) === false) {
-        fwrite(STDERR, $label . " missing from manager.php\n");
-        exit(1);
-    }
+if (strpos($manager, "\$managerAllowedActions = array('dashboard', 'tickets', 'logout')") === false) {
+    fwrite(STDERR, "manager accounting route must be hidden from the manager portal\n");
+    exit(1);
 }
 
 $cssChecks = array(

@@ -29,7 +29,7 @@ include_once('./include/managers_config.php');
 
 $manager_index_logged_in = !empty($_SESSION['manager_username'])
   && isset($managers_data[$_SESSION['manager_username']]);
-$manager_allowed_hotspot = isset($_GET['hotspot']) && in_array($_GET['hotspot'], array('users', 'users-by-profile'), true);
+$manager_allowed_hotspot = false;
 $manager_allowed_generator = isset($_GET['hotspot-user']) && $_GET['hotspot-user'] === 'generate';
 $manager_allowed_index_route = $manager_allowed_hotspot || $manager_allowed_generator;
 

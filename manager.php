@@ -12,6 +12,7 @@ $url    = $_SERVER['REQUEST_URI'];
 $action = isset($_GET['action']) ? $_GET['action'] : 'dashboard';
 $idbl   = isset($_GET['idbl'])   ? $_GET['idbl']   : '';
 $idhr   = isset($_GET['idhr'])   ? $_GET['idhr']   : '';
+$managerAllowedActions = array('dashboard', 'tickets', 'logout');
 
 include_once('./lib/routeros_api.class.php');
 include_once('./lib/formatbytesbites.php');
@@ -84,6 +85,12 @@ if (isset($_POST['manager_login'])) {
 $manager_logged_in = isset($_SESSION['manager_username'])
     && isset($managers_data[$_SESSION['manager_username']]);
 
+if ($manager_logged_in && !in_array($action, $managerAllowedActions, true)) {
+    ob_end_clean();
+    header("Location: ./manager.php?action=dashboard");
+    exit;
+}
+
 // ── Si connecté : charger config routeur ────────────────────────────────────
 $API        = null;
 $identity   = '';
@@ -99,6 +106,7 @@ $manager_session_missing = false;
 $manager_session_message = '';
 $manager_router_connected = false;
 $manager_connection_error = '';
+$managerConnectedCount = 0;
 
 if ($manager_logged_in) {
     $managerUsername      = $_SESSION['manager_username'];
@@ -138,6 +146,8 @@ if ($manager_logged_in) {
         }
         $gi = $API->comm("/system/identity/print");
         $identity = isset($gi[0]['name']) ? $gi[0]['name'] : '';
+        $activeHotspotUsers = $API->comm("/ip/hotspot/active/print");
+        $managerConnectedCount = is_array($activeHotspotUsers) ? count($activeHotspotUsers) : 0;
 
         // ── Récupérer toutes les ventes ──────────────────────────────────────
         $getSales = $API->comm("/system/script/print", array("?comment" => "mikhmon"));
@@ -523,8 +533,8 @@ if ($accountingTo !== '') {
     }
 }
 $managerHomeUrl = './manager.php?action=dashboard';
-$managerOverviewUrl = './manager.php?action=overview&idbl=' . strtolower(date("M")) . date("Y");
-$managerAccountingUrl = './manager.php?action=accounting&idbl=' . urlencode($accountingMonthKey);
+$managerOverviewUrl = './manager.php?action=dashboard';
+$managerAccountingUrl = './manager.php?action=dashboard';
 $accountingNoticeMsg = '';
 $accountingNoticeError = '';
 $accountingNoticeTargets = mikhmon_accounting_notification_targets($accountingSummary, $managerSellersData, $accountingSeller);
@@ -944,40 +954,9 @@ if ($manager_logged_in && $action === 'accounting' && isset($_POST['send_account
     <i class="fa fa-home"></i> Accueil gérant
   </a>
 
-  <a href="<?= $managerOverviewUrl ?>"
-     class="menu<?= ($action==='overview') ? ' active' : '' ?>">
-    <i class="fa fa-bar-chart"></i> <?= isset($_manager_overview) ? $_manager_overview : 'Vendors Overview' ?>
-  </a>
-
-  <a href="<?= $managerAccountingUrl ?>"
-     class="menu<?= ($action==='accounting') ? ' active' : '' ?>">
-    <i class="fa fa-calculator"></i> <?= isset($_manager_accounting) ? $_manager_accounting : 'Accounting' ?>
-  </a>
-
-  <a href="./manager.php?action=transfer"
-     class="menu<?= ($action==='transfer') ? ' active' : '' ?>">
-    <i class="fa fa-exchange"></i> <?= isset($_transfer_stock) ? $_transfer_stock : 'Transfer Stock' ?>
-    <?php $totalStock = array_sum($globalStock); foreach($allSellerStock as $ps) $totalStock += array_sum($ps); if($totalStock > 0): ?>
-    <span class="mgr-sidenav-badge"><?= $totalStock ?></span>
-    <?php endif; ?>
-  </a>
-
-  <a href="./manager.php?action=vendors"
-     class="menu<?= ($action==='vendors') ? ' active' : '' ?>">
-    <i class="fa fa-users"></i> <?= isset($_manager_my_vendors) ? $_manager_my_vendors : 'My Vendors' ?>
-    <?php if (!empty($managerSellersData)): ?>
-    <span class="mgr-sidenav-badge" style="background:#1a6fa0;"><?= count($managerSellersData) ?></span>
-    <?php endif; ?>
-  </a>
-
   <a href="./manager.php?action=tickets"
      class="menu<?= ($action==='tickets') ? ' active' : '' ?>">
     <i class="fa fa-ticket"></i> Générer &amp; imprimer
-  </a>
-
-  <a href="./manager.php?action=logs"
-     class="menu<?= ($action==='logs') ? ' active' : '' ?>">
-    <i class="fa fa-history"></i> <?= isset($_transfer_logs) ? $_transfer_logs : 'Transfer Log' ?>
   </a>
 
   <a href="./manager.php?action=logout" class="menu">
@@ -1046,107 +1025,41 @@ if (in_array($action, ['overview','accounting'])) {
   <div class="card-body">
     <div style="background:#f8f1ff;color:#4a235a;padding:12px 14px;margin-bottom:14px;border-left:4px solid #8e44ad;border-radius:4px;">
       <b><i class="fa fa-info-circle"></i> Rôle du gérant</b><br>
-      Le gérant supervise les vendeurs, suit le chiffre d’affaires et les commissions, puis redistribue le stock.
-      Il n’accède pas au tableau de bord technique général du routeur.
+      Le gérant consulte uniquement l’activité utile à la production : connectés en cours, profils disponibles et tickets à générer ou imprimer.
+      Il n’accède ni au tableau de bord technique admin, ni aux revenus globaux.
     </div>
 
     <div class="mgr-summary-cards" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;">
       <div style="flex:1;min-width:170px;background:#eaf4fb;border-radius:8px;padding:14px 16px;border-left:4px solid #2980b9;">
-        <div style="font-size:11px;color:#2980b9;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;"><i class="fa fa-users"></i> Vendeurs</div>
-        <div style="font-size:24px;font-weight:bold;color:#2980b9;"><?= $managerVendorCount ?></div>
-        <div style="font-size:12px;color:#1a6fa0;"><?= $managerVendorsWithSales ?> avec ventes • <?= $managerVendorsWithStock ?> avec stock</div>
+        <div style="font-size:11px;color:#2980b9;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;"><i class="fa fa-wifi"></i> Connectés maintenant</div>
+        <div style="font-size:24px;font-weight:bold;color:#2980b9;"><?= (int)$managerConnectedCount ?></div>
+        <div style="font-size:12px;color:#1a6fa0;">utilisateurs actifs sur le hotspot</div>
       </div>
       <div style="flex:1;min-width:170px;background:#fdf2e9;border-radius:8px;padding:14px 16px;border-left:4px solid #d35400;">
-        <div style="font-size:11px;color:#d35400;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;"><i class="fa fa-sun-o"></i> Aujourd'hui</div>
+        <div style="font-size:11px;color:#d35400;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;"><i class="fa fa-ticket"></i> Tickets générés aujourd'hui</div>
         <div style="font-size:24px;font-weight:bold;color:#d35400;"><?= $managerTodayTickets ?> <small style="font-size:13px;">vcr</small></div>
-        <div style="font-size:12px;color:#a04000;"><?= mikhmon_format_money_amount($managerTodayRevenue, $currency, $cekindo) ?></div>
-      </div>
-      <div style="flex:1;min-width:170px;background:#fdeef7;border-radius:8px;padding:14px 16px;border-left:4px solid #c0398f;">
-        <div style="font-size:11px;color:#c0398f;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;"><i class="fa fa-percent"></i> Commission aujourd'hui</div>
-        <div style="font-size:24px;font-weight:bold;color:#c0398f;"><?= mikhmon_format_money_amount($managerTodayCommission, $currency, $cekindo) ?></div>
+        <div style="font-size:12px;color:#a04000;">volume uniquement, sans revenu</div>
       </div>
       <div style="flex:1;min-width:170px;background:#e8f8f5;border-radius:8px;padding:14px 16px;border-left:4px solid #27ae60;">
         <div style="font-size:11px;color:#27ae60;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;"><i class="fa fa-archive"></i> Stock total</div>
         <div style="font-size:24px;font-weight:bold;color:#27ae60;"><?= $managerStockTotal ?></div>
+        <div style="font-size:12px;color:#1e7e34;">tickets non utilisés chez les vendeurs</div>
       </div>
       <div style="flex:1;min-width:170px;background:#f3e8fd;border-radius:8px;padding:14px 16px;border-left:4px solid #8e44ad;">
-        <div style="font-size:11px;color:#8e44ad;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;"><i class="fa fa-calendar"></i> Ce mois</div>
+        <div style="font-size:11px;color:#8e44ad;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;"><i class="fa fa-print"></i> Tickets du mois</div>
         <div style="font-size:24px;font-weight:bold;color:#8e44ad;"><?= $managerMonthTickets ?> <small style="font-size:13px;">vcr</small></div>
-        <div style="font-size:12px;color:#6c3483;"><?= mikhmon_format_money_amount($managerMonthRevenue, $currency, $cekindo) ?></div>
-      </div>
-      <div style="flex:1;min-width:170px;background:#fff8e1;border-radius:8px;padding:14px 16px;border-left:4px solid #e67e22;">
-        <div style="font-size:11px;color:#e67e22;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;"><i class="fa fa-gift"></i> Commission du mois</div>
-        <div style="font-size:24px;font-weight:bold;color:#e67e22;"><?= mikhmon_format_money_amount($managerMonthCommission, $currency, $cekindo) ?></div>
+        <div style="font-size:12px;color:#6c3483;">volume généré/imprimable</div>
       </div>
     </div>
 
     <div class="mgr-action-grid">
-      <a href="<?= $managerOverviewUrl ?>" class="mgr-action-card" style="background:#4aa3d6;">
-        <i class="fa fa-line-chart"></i> Vue d'ensemble des vendeurs
-      </a>
-      <a href="<?= $managerAccountingUrl ?>" class="mgr-action-card" style="background:#8e44ad;">
-        <i class="fa fa-calculator"></i> Comptabilité
-      </a>
-      <a href="./manager.php?action=transfer" class="mgr-action-card" style="background:#df8237;">
-        <i class="fa fa-exchange"></i> Transfert de stock
-      </a>
       <a href="./manager.php?action=tickets" class="mgr-action-card" style="background:#163c63;">
         <i class="fa fa-ticket"></i> Générer &amp; imprimer
-      </a>
-      <a href="./manager.php?action=vendors" class="mgr-action-card" style="background:#4fa58d;">
-        <i class="fa fa-users"></i> Mes vendeurs
-      </a>
-      <a href="./manager.php?action=logs" class="mgr-action-card" style="background:#384b60;">
-        <i class="fa fa-history"></i> Journal des transferts
       </a>
     </div>
   </div>
 </div>
 
-<?php if (!empty($managerSellersData)): ?>
-<div class="card">
-  <div class="card-header"><h3 style="margin:0;"><i class="fa fa-list"></i> Résumé rapide par vendeur</h3></div>
-  <div class="card-body">
-    <div class="table-responsive">
-        <table class="table table-bordered table-hover portal-table-min-lg" style="font-size:13px;">
-        <thead class="thead-light">
-          <tr>
-            <th>Vendeur</th>
-            <th class="text-center">Aujourd'hui</th>
-            <th class="text-center">CA aujourd'hui</th>
-            <th class="text-center">Commission jour</th>
-            <th class="text-center">Ce mois</th>
-            <th class="text-center">CA mois</th>
-            <th class="text-center">Commission mois</th>
-            <th class="text-center">Stock</th>
-          </tr>
-        </thead>
-        <tbody>
-          <?php foreach ($managerSellersData as $sk => $sd): ?>
-          <?php
-            $ss = isset($sellerStats[$sk]) ? $sellerStats[$sk] : array('total'=>0,'today'=>0,'rev_total'=>0.0,'rev_today'=>0.0);
-            $stk = isset($allSellerStock[$sk]) ? array_sum($allSellerStock[$sk]) : 0;
-            $rate = isset($sd['commission']) ? (int)$sd['commission'] : 0;
-            $todayComm = $ss['rev_today'] * $rate / 100;
-            $monthComm = $ss['rev_total'] * $rate / 100;
-          ?>
-          <tr>
-            <td><b><?= htmlspecialchars($sd['name']) ?></b><br><small><code><?= htmlspecialchars($sk) ?></code></small></td>
-            <td class="text-center"><?= $ss['today'] ?></td>
-            <td class="text-center"><?= mikhmon_format_money_amount($ss['rev_today'], $currency, $cekindo) ?></td>
-            <td class="text-center" style="color:#8e44ad;font-weight:bold;"><?= mikhmon_format_money_amount($todayComm, $currency, $cekindo) ?></td>
-            <td class="text-center"><?= $ss['total'] ?></td>
-            <td class="text-center"><?= mikhmon_format_money_amount($ss['rev_total'], $currency, $cekindo) ?></td>
-            <td class="text-center" style="color:#8e44ad;font-weight:bold;"><?= mikhmon_format_money_amount($monthComm, $currency, $cekindo) ?></td>
-            <td class="text-center"><?= $stk ?></td>
-          </tr>
-          <?php endforeach; ?>
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
-<?php endif; ?>
 </div></div>
 
 <?php elseif ($action === 'overview'): ?>
@@ -2042,24 +1955,6 @@ if (in_array($action, ['overview','accounting'])) {
         <span style="display:block;margin-top:6px;">attribuer immédiatement le lot à un vendeur pour impression directe, ou le garder en <b>stock gérant</b> pour le redistribuer plus tard.</span>
       </div>
 
-      <div class="mgr-ticket-links">
-        <a class="mgr-ticket-link-card" style="background:#1a6fa0;" href="./?hotspot=users&profile=all&session=<?= urlencode($manager_session_name) ?>">
-          <i class="fa fa-list"></i> Liste des tickets
-        </a>
-        <a class="mgr-ticket-link-card" style="background:#5b2c8d;" href="./?hotspot=users-by-profile&session=<?= urlencode($manager_session_name) ?>">
-          <i class="fa fa-tags"></i> Tickets par profil
-        </a>
-        <div class="mgr-ticket-link-card" style="background:#34495e;">
-          <i class="fa fa-filter"></i>
-          <select class="form-control" style="min-width:0;color:#243447;" onchange="if(this.value){window.location=this.value;}">
-            <option value="">Ouvrir un profil</option>
-            <?php foreach ($hotspotProfiles as $hp): ?>
-              <option value="./?hotspot=users&profile=<?= urlencode($hp['name']) ?>&session=<?= urlencode($manager_session_name) ?>"><?= htmlspecialchars($hp['name']) ?></option>
-            <?php endforeach; ?>
-          </select>
-        </div>
-      </div>
-
       <?php if (empty($hotspotProfiles)): ?>
         <div class="portal-note-card" style="max-width:900px;margin:0 auto;text-align:center;">
           <i class="fa fa-warning"></i> <?= isset($_no_profile) ? $_no_profile : 'No hotspot profile available on this router.' ?>
@@ -2147,9 +2042,6 @@ if (in_array($action, ['overview','accounting'])) {
           <button type="submit" class="btn bg-primary" style="min-width:240px;">
             <i class="fa fa-bolt"></i> Générer puis imprimer
           </button>
-          <a href="./manager.php?action=transfer" class="btn bg-secondary" style="min-width:220px;">
-            <i class="fa fa-exchange"></i> Gérer le stock
-          </a>
         </div>
       </form>
       <?php endif; ?>

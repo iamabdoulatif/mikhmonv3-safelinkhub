@@ -94,16 +94,8 @@ if ($targets !== array('alpha', 'beta')) {
 
 $managerPage = file_get_contents(__DIR__ . '/../manager.php');
 $adminPage = file_get_contents(__DIR__ . '/../settings/manage_sellers.php');
-if (strpos($managerPage, 'mikhmon_accounting_period_summary') === false) {
-  fwrite(STDERR, 'manager page must use the accounting period summary helper' . PHP_EOL);
-  exit(1);
-}
-if (strpos($managerPage, 'Heure du compte') === false || strpos($managerPage, 'settled_at') === false) {
-  fwrite(STDERR, 'manager page must expose the accounting settlement time' . PHP_EOL);
-  exit(1);
-}
-if (strpos($managerPage, 'send_accounting_notice') === false) {
-  fwrite(STDERR, 'manager page must expose vendor accounting notification action' . PHP_EOL);
+if (strpos($managerPage, "\$managerAllowedActions = array('dashboard', 'tickets', 'logout')") === false) {
+  fwrite(STDERR, 'manager page must restrict accounting to admin-facing tools only' . PHP_EOL);
   exit(1);
 }
 if (strpos($adminPage, 'ms-section-accounting') === false) {
