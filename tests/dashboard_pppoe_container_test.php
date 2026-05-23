@@ -12,21 +12,21 @@ foreach ($files as $path => $contents) {
         exit(1);
     }
 
+    $hotspotRow = strpos($contents, 'dashboard-hotspot-row');
     $pppoeRow = strpos($contents, 'dashboard-pppoe-row');
     $pppoeCard = strpos($contents, 'dashboard-pppoe-card');
-    $mainRow = strpos($contents, 'dashboard-main-row');
-
-    if ($pppoeRow === false || $pppoeCard === false) {
-        fwrite(STDERR, $path . " must render PPPoE in its own dashboard container\n");
-        exit(1);
-    }
-
-    if ($mainRow !== false && $pppoeRow > $mainRow) {
-        fwrite(STDERR, $path . " must place PPPoE before the revenue/dashboard-main container\n");
-        exit(1);
-    }
-
     $revenuePos = strpos($contents, 'reloadLreport');
+
+    if ($hotspotRow === false || $pppoeRow === false || $pppoeCard === false) {
+        fwrite(STDERR, $path . " must render Hotspot and PPPoE in separate dashboard containers\n");
+        exit(1);
+    }
+
+    if ($hotspotRow > $pppoeRow) {
+        fwrite(STDERR, $path . " must place Hotspot above PPPoE\n");
+        exit(1);
+    }
+
     if ($revenuePos !== false && $pppoeRow > $revenuePos) {
         fwrite(STDERR, $path . " must keep PPPoE outside the revenue container\n");
         exit(1);
@@ -34,7 +34,13 @@ foreach ($files as $path => $contents) {
 }
 
 $css = file_get_contents($root . '/css/mikhmon-responsive.css');
-if ($css === false || strpos($css, '.dashboard-pppoe-row') === false || strpos($css, '.dashboard-pppoe-card') === false) {
+if ($css === false
+    || strpos($css, '.dashboard-hotspot-row') === false
+    || strpos($css, '.dashboard-pppoe-row') === false
+    || strpos($css, '.dashboard-pppoe-card') === false
+    || strpos($css, '.seller-portal .main-container > .row') === false
+    || strpos($css, '.manager-portal .main-container > .row') === false
+    || strpos($css, '.portal-admin-shell > .row') === false) {
     fwrite(STDERR, "dashboard PPPoE responsive CSS missing\n");
     exit(1);
 }

@@ -88,7 +88,7 @@ foreach ($dashboardNeedles as $needle) {
   }
 }
 
-if (strpos($aload, 'id="r_pppoe" class="row dashboard-pppoe-row') === false) {
+if (strpos($aload, 'id="r_pppoe" class="row dashboard-pppoe-row') === false || strpos($aload, 'dashboard-hotspot-row') === false) {
   fwrite(STDERR, 'dashboard ajax refresh must expose a separate PPPoE replacement row' . PHP_EOL);
   exit(1);
 }
@@ -104,9 +104,9 @@ if (strpos($index, '#r_pppoe') === false) {
 }
 
 $rPppoeStart = strpos($aload, 'id="r_pppoe" class="row dashboard-pppoe-row');
-$r2Start = strpos($aload, 'id="r_2" class="row');
-if ($rPppoeStart === false || $r2Start === false || $rPppoeStart > $r2Start) {
-  fwrite(STDERR, 'dashboard PPPoE ajax row must be separate and before the hotspot row' . PHP_EOL);
+$r2Start = strpos($aload, 'id="r_2" class="row dashboard-hotspot-row');
+if ($rPppoeStart === false || $r2Start === false || $r2Start > $rPppoeStart) {
+  fwrite(STDERR, 'dashboard hotspot ajax row must stay above the separate PPPoE row' . PHP_EOL);
   exit(1);
 }
 

@@ -243,10 +243,6 @@ img {
     display: none !important;
   }
 
-  #navbar .navbar-left #cpage {
-    display: none !important;
-  }
-
   #navbar .navbar-right {
     display: flex;
     flex: 1 1 auto;
@@ -284,30 +280,60 @@ img {
   }
 }
 
-/* ── 14b. DASHBOARD PPPoE – SEPARATE FROM REVENUE ───────────────── */
-.dashboard-pppoe-row {
+/* ── 14b. BLOCK FLOW – ADMIN / MANAGER / SELLER ─────────────────── */
+#reloadHome > .row,
+.dashboard-hotspot-row,
+.dashboard-pppoe-row,
+.seller-portal .main-container > .row,
+.manager-portal .main-container > .row,
+.portal-admin-shell > .row {
   clear: both;
   width: 100%;
   box-sizing: border-box;
 }
 
+.dashboard-hotspot-row > .col-12,
 .dashboard-pppoe-row > .col-12,
+.dashboard-hotspot-card,
 .dashboard-pppoe-card {
   box-sizing: border-box;
 }
 
 @media screen and (max-width: 749px) {
+  #reloadHome > .row > [class*="col-"],
+  .seller-portal .main-container > .row > [class*="col-"],
+  .manager-portal .main-container > .row > [class*="col-"],
+  .portal-admin-shell > .row > [class*="col-"] {
+    float: none;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .dashboard-hotspot-row > .col-12,
   .dashboard-pppoe-row > .col-12 {
     float: none;
     width: 100%;
   }
 
+  .dashboard-hotspot-card .dashboard-hotspot-grid > .col-3,
   .dashboard-pppoe-card .dashboard-hotspot-grid > .col-3 {
     width: 50%;
+  }
+
+  .seller-portal .card,
+  .seller-portal .box,
+  .manager-portal .card,
+  .manager-portal .box,
+  .portal-admin-shell .card,
+  .portal-admin-shell .box {
+    clear: both;
+    max-width: 100%;
   }
 }
 
 @media screen and (max-width: 480px) {
+  .dashboard-hotspot-card .dashboard-hotspot-grid > .col-3,
   .dashboard-pppoe-card .dashboard-hotspot-grid > .col-3 {
     width: 100%;
   }
