@@ -6,6 +6,32 @@ if (!function_exists('mikhmon_update_cache_file')) {
     return dirname(__DIR__) . '/logs/app_update_status.json';
   }
 
+  function mikhmon_update_local_build_stamp()
+  {
+    $root = dirname(__DIR__);
+    $gitHead = $root . '/.git/HEAD';
+    if (is_file($gitHead)) {
+      $head = trim((string) @file_get_contents($gitHead));
+      $hash = '';
+      if (strpos($head, 'ref: ') === 0) {
+        $refFile = $root . '/.git/' . trim(substr($head, 5));
+        if (is_file($refFile)) {
+          $hash = trim((string) @file_get_contents($refFile));
+        }
+      } else {
+        $hash = $head;
+      }
+
+      if (preg_match('/^[a-f0-9]{7,40}$/i', $hash)) {
+        return 'local-' . substr($hash, 0, 7);
+      }
+    }
+
+    $fallbackFile = $root . '/include/app_update.php';
+    $mtime = is_file($fallbackFile) ? filemtime($fallbackFile) : time();
+    return 'local-' . gmdate('YmdHis', $mtime);
+  }
+
   function mikhmon_update_build_info()
   {
     $info = array(
@@ -30,7 +56,7 @@ if (!function_exists('mikhmon_update_cache_file')) {
       $info['version'] = 'local';
     }
     if ($info['stamp'] === '') {
-      $info['stamp'] = 'unknown';
+      $info['stamp'] = mikhmon_update_local_build_stamp();
     }
 
     return $info;
@@ -82,7 +108,10 @@ if (!function_exists('mikhmon_update_cache_file')) {
     if (!$force && is_file($cacheFile) && (time() - filemtime($cacheFile)) < 21600) {
       $cached = json_decode((string) file_get_contents($cacheFile), true);
       if (is_array($cached)) {
-        return $cached;
+        $cachedStamp = isset($cached['current_stamp']) ? (string) $cached['current_stamp'] : '';
+        if ($cachedStamp !== '' && $cachedStamp !== 'unknown') {
+          return $cached;
+        }
       }
     }
 

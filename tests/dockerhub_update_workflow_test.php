@@ -49,6 +49,7 @@ $updateChecks = array(
     'DockerHub tag API' => 'hub.docker.com/v2/repositories',
     'update panel renderer' => 'function mikhmon_render_update_panel',
     'RouterOS install guidance' => '/container',
+    'local git build fallback' => 'mikhmon_update_local_build_stamp',
 );
 
 foreach ($updateChecks as $label => $needle) {
@@ -77,6 +78,13 @@ foreach ($aboutChecks as $label => $needle) {
         fwrite(STDERR, $label . " missing from about update section\n");
         exit(1);
     }
+}
+
+require_once $root . '/include/app_update.php';
+$buildInfo = mikhmon_update_build_info();
+if ($buildInfo['stamp'] === 'unknown' || $buildInfo['stamp'] === '') {
+    fwrite(STDERR, "local build stamp must not be unknown\n");
+    exit(1);
 }
 
 echo "dockerhub_update_workflow_test passed\n";
