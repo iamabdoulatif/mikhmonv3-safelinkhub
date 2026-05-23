@@ -638,10 +638,84 @@ if (isset($_POST['admin_send_accounting_notice'])) {
   line-height:1.45;
   margin:10px 0;
 }
+.accounting-delete-panel {
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:12px;
+  border:1px solid #fecaca;
+  border-left:4px solid #dc2626;
+  border-radius:8px;
+  background:#fff7f7;
+  padding:12px 14px;
+  margin-bottom:16px;
+}
+.accounting-delete-panel .portal-filter-item {
+  flex:1 1 220px;
+  margin:0;
+}
+.accounting-delete-actions {
+  display:flex;
+  gap:8px;
+  flex:0 0 auto;
+}
+.accounting-day-header {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  flex-wrap:wrap;
+  background:#fafafa;
+}
+.accounting-day-meta {
+  font-size:13px;
+  color:#555;
+  display:flex;
+  align-items:center;
+  gap:5px;
+  flex-wrap:wrap;
+}
+.accounting-day-title {
+  margin:0;
+  color:#243447;
+}
 .table-responsive { overflow-x: auto; }
+@media (max-width: 900px) {
+    .accounting-delete-panel {
+      align-items:stretch;
+      flex-direction:column;
+    }
+    .accounting-delete-actions {
+      width:100%;
+    }
+    .accounting-delete-actions .btn {
+      width:100%;
+      white-space:normal;
+    }
+    .accounting-day-header {
+      align-items:flex-start;
+      flex-direction:column;
+    }
+    .acct-del-day-btn {
+      width:100%;
+      white-space:normal !important;
+    }
+}
 @media (max-width: 600px) {
     .admin-transfer-grid { grid-template-columns: 1fr; }
     .admin-accounting-card { min-width:100%; }
+    .admin-accounting-card-value {
+      font-size:18px !important;
+      overflow-wrap:anywhere;
+    }
+    .accounting-day-meta {
+      width:100%;
+      font-size:12px;
+    }
+    .accounting-day-title {
+      font-size:16px;
+      line-height:1.35;
+    }
     .accounting-responsive-table { min-width:0 !important; border:0 !important; }
     .accounting-responsive-table thead { display:none; }
     .accounting-responsive-table,
@@ -1501,6 +1575,25 @@ if (isset($_POST['admin_send_accounting_notice'])) {
       </a>
     </form>
 
+    <div class="accounting-delete-panel">
+      <div class="portal-filter-item">
+        <label class="transfer-label" for="acct-delete-date"><i class="fa fa-trash"></i> Date de compte à supprimer</label>
+        <input type="date"
+               id="acct-delete-date"
+               class="form-control"
+               min="<?= htmlspecialchars($adminAccountingBounds['from']) ?>"
+               max="<?= htmlspecialchars($adminAccountingBounds['to']) ?>"
+               value="<?= htmlspecialchars($adminAccountingTo) ?>">
+      </div>
+      <div class="accounting-delete-actions">
+        <button type="button"
+                class="btn bg-danger"
+                onclick="deleteSelectedAccountingDate(<?= json_encode($adminAccountingMonthKey) ?>, <?= json_encode($session ?? '') ?>, this)">
+          <i class="fa fa-trash"></i> Supprimer cette date
+        </button>
+      </div>
+    </div>
+
     <?php if (!$API_ms_connected): ?>
       <div class="bg-warning" style="padding:10px 14px;border-radius:5px;margin-bottom:14px;">
         <i class="fa fa-warning"></i> Impossible de lire les ventes du routeur pour cette session. Vérifiez la connexion MikroTik.
@@ -1646,13 +1739,13 @@ if (isset($_POST['admin_send_accounting_notice'])) {
       </p>
     <?php else: ?>
       <?php foreach ($adminAccountingSummary['days'] as $dayKey => $day): ?>
-      <div class="card box-bordered" style="margin-bottom:14px;border-left:4px solid <?= $day['total']['count'] > 0 ? '#27ae60' : '#cbd5e1' ?>;">
-        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;background:#fafafa;">
-          <h4 style="margin:0;color:#243447;">
+      <div class="card box-bordered" data-accounting-day="<?= htmlspecialchars($day['iso']) ?>" style="margin-bottom:14px;border-left:4px solid <?= $day['total']['count'] > 0 ? '#27ae60' : '#cbd5e1' ?>;">
+        <div class="card-header accounting-day-header">
+          <h4 class="accounting-day-title">
             <i class="fa fa-calendar"></i> <?= htmlspecialchars($day['iso']) ?>
             <small style="color:#888;">(<?= htmlspecialchars($dayKey) ?>)</small>
           </h4>
-          <div style="font-size:13px;color:#555;">
+          <div class="accounting-day-meta">
             <b><?= (int)$day['total']['count'] ?></b> vcr &middot;
             <b><?= mikhmon_format_money_amount($day['total']['revenue'], $currency, $cekindo) ?></b> &middot;
             Commission <?= mikhmon_format_money_amount($day['total']['commission'], $currency, $cekindo) ?> &middot;
@@ -1661,7 +1754,7 @@ if (isset($_POST['admin_send_accounting_notice'])) {
           </div>
           <?php if ((int)$day['total']['count'] > 0): ?>
           <button class="btn btn-sm bg-danger acct-del-day-btn"
-                  onclick="deleteDaySales(<?= json_encode($day['iso']) ?>, <?= json_encode($adminAccountingMonthKey ?? '') ?>, this)"
+                  onclick="deleteDaySales(<?= json_encode($day['iso']) ?>, <?= json_encode($adminAccountingMonthKey ?? '') ?>, <?= json_encode($session ?? '') ?>, this)"
                   title="Supprimer toutes les ventes de ce jour sur MikroTik"
                   style="white-space:nowrap;">
             <i class="fa fa-trash"></i> Supprimer les ventes
@@ -2030,9 +2123,9 @@ function clearAllNotifications(btn, sessionKey) {
 }
 
 /* Supprimer les ventes d'un jour depuis MikroTik */
-function deleteDaySales(isoDate, monthKey, btn) {
+function deleteDaySales(isoDate, monthKey, sessionKey, btn) {
   if (!confirm('Supprimer TOUTES les ventes du ' + isoDate + ' sur MikroTik ?\n\nCette action est irréversible.')) return;
-  _acctPost({ action: 'delete_day_sales', iso_date: isoDate, month_key: monthKey }, btn, function(res) {
+  _acctPost({ action: 'delete_day_sales', iso_date: isoDate, month_key: monthKey, session: sessionKey }, btn, function(res) {
     var msg = 'Supprimé : ' + res.deleted + ' script(s)';
     if (res.errors && res.errors.length > 0) msg += '\nErreurs : ' + res.errors.join(', ');
     alert(msg);
@@ -2047,6 +2140,16 @@ function deleteDaySales(isoDate, monthKey, btn) {
       btn.innerHTML = '<i class="fa fa-check"></i> Supprimé';
     }
   });
+}
+
+function deleteSelectedAccountingDate(monthKey, sessionKey, btn) {
+  var field = document.getElementById('acct-delete-date');
+  var isoDate = field ? field.value : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) {
+    alert('Choisissez une date valide.');
+    return;
+  }
+  deleteDaySales(isoDate, monthKey, sessionKey, btn);
 }
 </script>
 

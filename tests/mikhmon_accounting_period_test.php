@@ -118,6 +118,19 @@ if (strpos($adminPage, 'admin_send_accounting_notice') === false) {
   fwrite(STDERR, 'admin sellers page must expose vendor accounting notification action' . PHP_EOL);
   exit(1);
 }
+if (strpos($adminPage, 'json_encode($session') === false || strpos($adminPage, "action: 'delete_day_sales'") === false) {
+  fwrite(STDERR, 'admin delete day sales buttons must pass the router session to the AJAX endpoint' . PHP_EOL);
+  exit(1);
+}
+if (strpos($adminPage, 'id="acct-delete-date"') === false || strpos($adminPage, 'deleteSelectedAccountingDate') === false) {
+  fwrite(STDERR, 'admin accounting page must expose a date selector for deleting accounting dates' . PHP_EOL);
+  exit(1);
+}
+$accountingAction = file_get_contents(__DIR__ . '/../process/accounting_action.php');
+if (strpos($accountingAction, '$session = preg_replace') === false) {
+  fwrite(STDERR, 'accounting AJAX actions must sanitize and use the posted router session' . PHP_EOL);
+  exit(1);
+}
 
 $sellerPage = file_get_contents(__DIR__ . '/../sellers.php');
 if (strpos($sellerPage, 'accounting_notifications_for_seller') === false) {

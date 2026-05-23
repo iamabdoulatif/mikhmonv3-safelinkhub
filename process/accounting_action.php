@@ -20,7 +20,7 @@ if (empty($_SESSION['mikhmon'])) {
 require_once __DIR__ . '/../include/accounting_notifications.php';
 
 $action  = isset($_POST['action'])  ? trim($_POST['action'])  : '';
-$session = isset($_POST['session']) ? trim($_POST['session']) : '';
+$session = preg_replace('/[^a-zA-Z0-9_-]/', '', isset($_POST['session']) ? trim($_POST['session']) : '');
 
 /* ── Supprimer une notification de l'historique ──────────────────────────── */
 if ($action === 'delete_notification') {
@@ -65,6 +65,10 @@ if ($action === 'delete_day_sales') {
     }
     if (!preg_match('/^[a-z]{3}\d{4}$/', $monthKey)) {
         echo json_encode(['ok' => false, 'error' => 'invalid_month']);
+        exit;
+    }
+    if ($session === '') {
+        echo json_encode(['ok' => false, 'error' => 'missing_session']);
         exit;
     }
 
