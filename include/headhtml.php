@@ -18,6 +18,7 @@
 session_start();
  // hide all error
 error_reporting(0);
+include_once(__DIR__ . '/app_update.php');
 ?>
 <!DOCTYPE html>
 <html>
@@ -49,5 +50,6 @@ error_reporting(0);
 	</head>
 	<body>
 		<div class="wrapper">
+			<?= mikhmon_render_update_banner(); ?>
 
 			

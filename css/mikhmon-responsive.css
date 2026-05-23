@@ -212,7 +212,75 @@ img {
   }
 }
 
-/* ── 15. LONG NAV LABELS ────────────────────────────────────────── */
+/* ── 15. MANAGER ACCOUNTING – MOBILE LAYOUT ─────────────────────── */
+.manager-portal .mgr-accounting-shell {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.manager-portal .mgr-accounting-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.manager-portal .mgr-accounting-form .portal-filter-item,
+.manager-portal .mgr-accounting-form .form-control {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.manager-portal .mgr-accounting-actions,
+.manager-portal .mgr-accounting-next-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.manager-portal .mgr-accounting-actions .btn,
+.manager-portal .mgr-accounting-next-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 170px;
+  text-align: center;
+  white-space: normal;
+}
+
+@media screen and (max-width: 749px) {
+  .manager-portal .mgr-accounting-help {
+    padding: 12px 14px;
+    line-height: 1.55;
+  }
+
+  .manager-portal .mgr-accounting-shell {
+    padding: 14px;
+  }
+
+  .manager-portal .mgr-accounting-form {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .manager-portal .mgr-accounting-actions,
+  .manager-portal .mgr-accounting-next-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .manager-portal .mgr-accounting-actions .btn,
+  .manager-portal .mgr-accounting-next-actions .btn {
+    width: 100%;
+    min-width: 0;
+    margin-top: 0;
+  }
+}
+
+/* ── 16. LONG NAV LABELS ────────────────────────────────────────── */
 .sidenav .menu {
   box-sizing: border-box;
   overflow-wrap: anywhere;

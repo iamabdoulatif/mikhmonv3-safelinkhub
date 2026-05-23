@@ -25,6 +25,7 @@ include('./settings/setlang.php');
 include('./include/sellers_config.php');
 include_once('./include/seller_ticket_helper.php');
 include_once('./include/accounting_notifications.php');
+include_once('./include/app_update.php');
 include('./include/managers_config.php');
 include_once('./include/auth.php');
 include_once('./include/csrf.php');
@@ -866,6 +867,7 @@ if ($manager_logged_in && $action === 'accounting' && isset($_POST['send_account
 </head>
 <body class="manager-portal">
 <div class="wrapper">
+<?= mikhmon_render_update_banner(); ?>
 
 <?php if (!$manager_logged_in): ?>
 <!-- ══════════════════════════ PAGE DE CONNEXION ═══════════════════════════ -->
@@ -1380,15 +1382,15 @@ if (in_array($action, ['overview','accounting'])) {
       </div>
     </div>
 
-    <div class="portal-note-card" style="margin-bottom:16px;text-align:left;">
+    <div class="portal-note-card mgr-accounting-help" style="margin-bottom:16px;text-align:left;">
       <b><i class="fa fa-scissors"></i> Comptabilité par arrêt de période</b><br>
       Choisissez une période, puis chaque journée est séparée avec son total par vendeur. Après avoir fait les comptes jusqu'à une date, utilisez le lien suivant pour repartir du lendemain sans mélanger les périodes déjà réglées.
     </div>
 
-    <form method="get" action="./manager.php" class="portal-card-section" style="margin-bottom:18px;">
+    <form method="get" action="./manager.php" class="portal-card-section mgr-accounting-shell" style="margin-bottom:18px;">
       <input type="hidden" name="action" value="accounting">
       <input type="hidden" name="idbl" value="<?= htmlspecialchars($accountingMonthKey) ?>">
-      <div class="portal-filter-grid">
+      <div class="portal-filter-grid mgr-accounting-form">
         <div class="portal-filter-item">
           <label class="transfer-label"><i class="fa fa-calendar-o"></i> Début</label>
           <input type="date" name="from" class="form-control" value="<?= htmlspecialchars($accountingFrom) ?>">
@@ -1417,12 +1419,14 @@ if (in_array($action, ['overview','accounting'])) {
           <input type="time" name="next_settled_at" class="form-control" step="60" value="<?= htmlspecialchars(substr($accountingNextSettlementTime, 0, 5)) ?>">
         </div>
       </div>
-      <button type="submit" class="btn bg-primary" style="margin-top:8px;">
-        <i class="fa fa-filter"></i> Afficher les comptes
-      </button>
-      <a class="btn" style="margin-top:8px;background:#eee;color:#333;" href="./manager.php?action=accounting&idbl=<?= urlencode($accountingMonthKey) ?>">
-        <i class="fa fa-refresh"></i> Mois complet
-      </a>
+      <div class="mgr-accounting-actions">
+        <button type="submit" class="btn bg-primary">
+          <i class="fa fa-filter"></i> Afficher les comptes
+        </button>
+        <a class="btn" style="background:#eee;color:#333;" href="./manager.php?action=accounting&idbl=<?= urlencode($accountingMonthKey) ?>">
+          <i class="fa fa-refresh"></i> Mois complet
+        </a>
+      </div>
     </form>
 
     <?php
@@ -1460,7 +1464,7 @@ if (in_array($action, ['overview','accounting'])) {
     </div>
 
     <?php if ($accountingNextFrom !== ''): ?>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+    <div class="mgr-accounting-next-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
       <a class="btn" style="background:#5b2c8d;color:#fff;" href="./manager.php?action=accounting&idbl=<?= urlencode($accountingMonthKey) ?>&from=<?= urlencode($accountingNextFrom) ?>&to=<?= urlencode($accountingNextFrom) ?>&settled_at=<?= urlencode($accountingNextSettlementTime) ?>&next_settled_at=<?= urlencode($accountingNextSettlementTime) ?><?= $accountingSeller !== '' ? '&seller=' . urlencode($accountingSeller) : '' ?>">
         <i class="fa fa-step-forward"></i> Jour suivant : <?= htmlspecialchars($accountingNextFrom) ?>
       </a>

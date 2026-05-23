@@ -33,12 +33,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y skopeo
 
+      - name: Compute build metadata
+        run: |
+          stamp="$(date -u +%Y%m%d%H%M%S)"
+          echo "BUILD_STAMP=${stamp}" >> "$GITHUB_ENV"
+          echo "BUILD_VERSION=v3.0.${stamp}" >> "$GITHUB_ENV"
+
       - name: Build, flatten and push
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-          BUILD_STAMP: ${{ github.run_number }}-${{ github.sha }}
-          BUILD_VERSION: github-${{ github.run_number }}
+          BUILD_STAMP: ${{ env.BUILD_STAMP }}
+          BUILD_VERSION: ${{ env.BUILD_VERSION }}
           MANIFEST_TAGS: latest v1
         run: bash tools/ci-build-push-flattened.sh
 

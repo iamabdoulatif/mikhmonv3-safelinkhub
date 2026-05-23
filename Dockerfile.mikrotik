@@ -3,11 +3,16 @@ FROM --platform=$TARGETPLATFORM php:7.4-cli-alpine3.16
 ARG TARGETPLATFORM
 ARG BUILD_VERSION=dev
 ARG BUILD_STAMP=unknown
+ARG IMAGE_NAME=latif225/mikhmonv3-safelinkhub
 
 LABEL org.opencontainers.image.title="mikhmonv3-safelinkhub"
 LABEL org.opencontainers.image.description="Mikhmon V3 SafelinkHub for MikroTik RouterOS containers"
 LABEL org.opencontainers.image.version="${BUILD_VERSION}"
 LABEL org.opencontainers.image.revision="${BUILD_STAMP}"
+
+ENV MIKHMON_BUILD_VERSION="${BUILD_VERSION}"
+ENV MIKHMON_BUILD_STAMP="${BUILD_STAMP}"
+ENV MIKHMON_IMAGE_NAME="${IMAGE_NAME}"
 
 WORKDIR /src
 
@@ -51,6 +56,7 @@ RUN rm -rf \
       /src/src/css/font-awesome/scss \
       /src/src/wireguard-configs/* \
     && mkdir -p /src/src/logs /src/src/img /src/src/wireguard-configs \
+    && printf '{"version":"%s","stamp":"%s","image":"%s"}\n' "$BUILD_VERSION" "$BUILD_STAMP" "$IMAGE_NAME" > /src/src/build-info.json \
     && touch /src/src/logs/index.php \
     && find /src/src -type d -exec chmod 755 {} + \
     && find /src/src -type f -exec chmod 644 {} +
