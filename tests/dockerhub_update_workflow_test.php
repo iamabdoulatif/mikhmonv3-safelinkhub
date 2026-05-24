@@ -22,6 +22,9 @@ $checks = array(
     'flattened build script' => 'tools/ci-build-push-flattened.sh',
     'dockerhub repository' => 'latif225/mikhmonv3-safelinkhub',
     'build timestamp step' => 'BUILD_STAMP=',
+    'skopeo install step' => 'sudo apt-get install -y skopeo',
+    'qemu setup step' => 'docker/setup-qemu-action@v3',
+    'multi-arch manifest tags' => 'MANIFEST_TAGS: latest v1',
 );
 
 foreach ($checks as $label => $needle) {

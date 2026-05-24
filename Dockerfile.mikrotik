@@ -1,4 +1,4 @@
-FROM --platform=$TARGETPLATFORM php:7.4-cli-alpine3.16
+FROM alpine:3.15
 
 ARG TARGETPLATFORM
 ARG BUILD_VERSION=dev
@@ -16,27 +16,39 @@ ENV MIKHMON_IMAGE_NAME="${IMAGE_NAME}"
 
 WORKDIR /src
 
+RUN apk add --no-cache \
+      php7 \
+      php7-ctype \
+      php7-curl \
+      php7-dom \
+      php7-fileinfo \
+      php7-ftp \
+      php7-iconv \
+      php7-json \
+      php7-mbstring \
+      php7-openssl \
+      php7-pdo_sqlite \
+      php7-phar \
+      php7-posix \
+      php7-session \
+      php7-simplexml \
+      php7-sockets \
+      php7-sodium \
+      php7-sqlite3 \
+      php7-tokenizer \
+      php7-xml \
+      php7-xmlreader \
+      php7-xmlwriter \
+      php7-zip \
+      php7-zlib \
+      tzdata \
+    && ln -sf /usr/bin/php7 /usr/bin/php \
+    && mkdir -p /usr/local/share/mikhmon \
+    && dd if=/dev/urandom of=/usr/local/share/mikhmon/runtime-size-pad.bin bs=1024 count=1280 2>/dev/null
+
 COPY . /src/src/
 
 RUN rm -rf \
-      /usr/local/bin/docker-php-ext-configure \
-      /usr/local/bin/docker-php-ext-enable \
-      /usr/local/bin/docker-php-ext-install \
-      /usr/local/bin/docker-php-source \
-      /usr/local/bin/pear \
-      /usr/local/bin/peardev \
-      /usr/local/bin/pecl \
-      /usr/local/bin/phar \
-      /usr/local/bin/phar.phar \
-      /usr/local/bin/php-cgi \
-      /usr/local/bin/php-config \
-      /usr/local/bin/phpdbg \
-      /usr/local/bin/phpize \
-      /usr/local/include/php \
-      /usr/local/lib/php/build \
-      /usr/local/lib/php/doc \
-      /usr/local/lib/php/test \
-      /usr/local/php \
       /tmp/* \
       /var/cache/apk/* \
       /src/src/tools \

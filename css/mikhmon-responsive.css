@@ -299,8 +299,8 @@ img {
   box-sizing: border-box;
 }
 
-.dashboard-hotspot-card .dashboard-hotspot-grid > .col-box-6 {
-  width: 50%;
+.dashboard-hotspot-card .dashboard-hotspot-grid > .col-3,
+.dashboard-pppoe-card .dashboard-hotspot-grid > .col-3 {
   float: left;
   box-sizing: border-box;
   padding: 4px;
@@ -311,6 +311,14 @@ img {
 .dashboard-hotspot-card .box a { display: block; color: #f3f4f5; text-decoration: none; }
 .dashboard-hotspot-card .box a div { font-size: 13px; opacity: .92; }
 .dashboard-hotspot-card .box h1.acct-period-h1 { font-size: 16px; white-space: normal; word-break: break-word; }
+
+@media screen and (min-width: 750px) {
+  .dashboard-hotspot-card .dashboard-hotspot-grid > .col-3,
+  .dashboard-pppoe-card .dashboard-hotspot-grid > .col-3 {
+    width: 25%;
+    float: left;
+  }
+}
 
 @media screen and (max-width: 749px) {
   #reloadHome > .row > [class*="col-"],
@@ -332,11 +340,12 @@ img {
   .dashboard-hotspot-card .dashboard-hotspot-grid > .col-3,
   .dashboard-pppoe-card .dashboard-hotspot-grid > .col-3 {
     width: 50%;
+    float: left;
   }
 
   .dashboard-hotspot-card .dashboard-hotspot-grid > .col-box-6 {
-    width: 100%;
-    float: none;
+    width: 50%;
+    float: left;
   }
 
   .seller-portal .card,
@@ -353,7 +362,8 @@ img {
 @media screen and (max-width: 480px) {
   .dashboard-hotspot-card .dashboard-hotspot-grid > .col-3,
   .dashboard-pppoe-card .dashboard-hotspot-grid > .col-3 {
-    width: 100%;
+    width: 50%;
+    float: left;
   }
   .dashboard-hotspot-card .box h1.acct-period-h1 { font-size: 13px; }
 }
