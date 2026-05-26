@@ -20,6 +20,7 @@ include_once('./include/mikhmon_compat.php');
 include_once('./include/transfer_log.php');
 include_once('./include/seller_ticket_helper.php');
 include_once('./include/accounting_notifications.php');
+include_once('./include/hotspot_account_assignment.php');
 
 $session = isset($_GET['session']) ? $_GET['session'] : '';
 include('./include/readcfg.php');
@@ -40,6 +41,8 @@ $transfer_log_msg   = '';
 $transfer_log_error = '';
 $force_active_tab   = '';
 $API_ms_connected  = false;
+$hotspotDefaultUsersRaw = array();
+$hotspotIpBindingRows = array();
 
 // ── Stock de tous les vendeurs (tickets non utilisés) ────────────────────────
 $allSellerStock  = array(); // ['sellerKey']['profile'] = count
@@ -52,6 +55,8 @@ if (!empty($iphost)) {
     $API_ms->debug = false;
     if ($API_ms->connect($iphost, $userhost, decrypt($passwdhost))) {
         $API_ms_connected = true;
+        $hotspotDefaultUsersRaw = $API_ms->comm("/ip/hotspot/user/print", array("?profile" => "default"));
+        $hotspotIpBindingRows = $API_ms->comm("/ip/hotspot/ip-binding/print");
         $unusedAll = $API_ms->comm("/ip/hotspot/user/print", array("?uptime" => "0s"));
         if (is_array($unusedAll)) {
             foreach ($sellers_data as $sk => $sd) {
@@ -238,7 +243,7 @@ if (isset($_POST['delete_transfer_log']) || isset($_POST['clear_transfer_logs'])
 }
 
 // ── Ajouter un vendeur ───────────────────────────────────────────────────────
-if (isset($_POST['add_seller']) || isset($_POST['change_pass']) || isset($_POST['update_seller_account']) || isset($_POST['add_manager']) || isset($_POST['change_manager_pass']) || isset($_POST['update_manager_account']) || isset($_POST['delete_seller']) || isset($_POST['delete_manager'])) {
+if (isset($_POST['add_seller']) || isset($_POST['change_pass']) || isset($_POST['update_seller_account']) || isset($_POST['add_manager']) || isset($_POST['change_manager_pass']) || isset($_POST['update_manager_account']) || isset($_POST['delete_seller']) || isset($_POST['delete_manager']) || isset($_POST['assign_hotspot_account'])) {
     csrf_guard();
 }
 if (isset($_POST['admin_send_accounting_notice'])) {
@@ -275,27 +280,143 @@ function mikhmon_account_label($value) {
     return ucfirst(strtolower($key));
 }
 
-if (isset($_POST['add_seller'])) {
-    $new_user    = mikhmon_account_key($_POST['new_user']);
-    $new_pass    = trim($_POST['new_pass']);
-    $new_name    = mikhmon_account_label($new_user);
-    $new_session = trim($_POST['new_session']);
+if (isset($_POST['assign_hotspot_account'])) {
+    $selectedHotspotUser = trim(isset($_POST['hotspot_default_user']) ? $_POST['hotspot_default_user'] : '');
+    $selectedRole = strtolower(trim(isset($_POST['hotspot_account_role']) ? $_POST['hotspot_account_role'] : ''));
+    $enteredPassword = trim(isset($_POST['hotspot_account_password']) ? $_POST['hotspot_account_password'] : '');
+    $force_active_tab = $selectedRole === 'manager' ? 'managers' : 'sellers';
 
-    if ($new_user == '' || $new_pass == '' || $new_name == '') {
+    if ($selectedHotspotUser === '' || !in_array($selectedRole, array('seller', 'manager'), true) || $enteredPassword === '') {
+        $assignMsg = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> Sélectionnez un utilisateur Hotspot, un rôle valide et renseignez le mot de passe.</div>';
+        if ($selectedRole === 'manager') { $msg_mgr = $assignMsg; } else { $msg = $assignMsg; }
+    } elseif ($session === '') {
+        $assignMsg = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> Session routeur invalide.</div>';
+        if ($selectedRole === 'manager') { $msg_mgr = $assignMsg; } else { $msg = $assignMsg; }
+    } else {
+        if (!isset($API_ms) || !$API_ms_connected) {
+            $API_ms = new RouterosAPI();
+            $API_ms->debug = false;
+            $API_ms_connected = $API_ms->connect($iphost, $userhost, decrypt($passwdhost));
+        }
+
+        if (!$API_ms_connected) {
+            $assignMsg = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> Connexion MikroTik impossible.</div>';
+            if ($selectedRole === 'manager') { $msg_mgr = $assignMsg; } else { $msg = $assignMsg; }
+        } else {
+            $freshDefaultUsers = $API_ms->comm("/ip/hotspot/user/print", array("?profile" => "default", "?name" => $selectedHotspotUser));
+            $candidate = mikhmon_hotspot_find_default_account_candidate($freshDefaultUsers, $selectedHotspotUser, $sellers_data, $managers_data);
+
+            if ($candidate === null) {
+                $assignMsg = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> Utilisateur Hotspot introuvable, déjà assigné, ou hors profil default.</div>';
+                if ($selectedRole === 'manager') { $msg_mgr = $assignMsg; } else { $msg = $assignMsg; }
+            } elseif (trim((string)$candidate['id']) === '') {
+                $assignMsg = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> Identifiant MikroTik introuvable : impossible de marquer le commentaire du compte.</div>';
+                if ($selectedRole === 'manager') { $msg_mgr = $assignMsg; } else { $msg = $assignMsg; }
+            } else {
+                $assignment = mikhmon_hotspot_account_record($candidate, $session, $selectedRole, $enteredPassword);
+                $accountKey = $assignment['key'];
+                $record = $assignment['record'];
+                $hotspotFootprint = mikhmon_hotspot_assignment_comment(isset($candidate['comment']) ? $candidate['comment'] : '', $session, $selectedRole, $accountKey);
+                $record['password'] = encrypt($record['password']);
+
+                if ($selectedRole === 'seller') {
+                    if (isset($sellers_data[$accountKey]) || isset($managers_data[$accountKey])) {
+                        $msg = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> Ce compte existe déjà.</div>';
+                    } else {
+                        $routerUpdate = $API_ms->comm("/ip/hotspot/user/set", array(
+                            ".id" => $candidate['id'],
+                            "password" => $enteredPassword,
+                            "comment" => $hotspotFootprint
+                        ));
+                        if (!mikhmon_hotspot_routeros_response_ok($routerUpdate)) {
+                            $msg = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> MikroTik a refusé la mise à jour du mot de passe ou du commentaire.</div>';
+                        } elseif (mikhmon_replace_assignment_line_in_file($sellers_file, 'sellers_data', $accountKey, $record)) {
+                            $sellers_data[$accountKey] = $record;
+                            $allSellerStock[$accountKey] = isset($allSellerStock[$accountKey]) ? $allSellerStock[$accountKey] : array();
+                            $msg = '<div class="bg-success" style="padding:8px;border-radius:5px;"><i class="fa fa-check"></i> Utilisateur Hotspot <b>' . htmlspecialchars($candidate['username']) . '</b> assigné comme vendeur <b>' . htmlspecialchars($accountKey) . '</b>. Empreinte MikroTik mise à jour.</div>';
+                        } else {
+                            $msg = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> Impossible d’enregistrer le vendeur.</div>';
+                        }
+                    }
+                } else {
+                    if (isset($sellers_data[$accountKey]) || isset($managers_data[$accountKey])) {
+                        $msg_mgr = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> Ce compte existe déjà.</div>';
+                    } else {
+                        $routerUpdate = $API_ms->comm("/ip/hotspot/user/set", array(
+                            ".id" => $candidate['id'],
+                            "password" => $enteredPassword,
+                            "comment" => $hotspotFootprint
+                        ));
+                        if (!mikhmon_hotspot_routeros_response_ok($routerUpdate)) {
+                            $msg_mgr = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> MikroTik a refusé la mise à jour du mot de passe ou du commentaire.</div>';
+                        } elseif (mikhmon_replace_assignment_line_in_file($managers_file, 'managers_data', $accountKey, $record)) {
+                            $managers_data[$accountKey] = $record;
+                            $msg_mgr = '<div class="bg-success" style="padding:8px;border-radius:5px;"><i class="fa fa-check"></i> Utilisateur Hotspot <b>' . htmlspecialchars($candidate['username']) . '</b> assigné comme gérant <b>' . htmlspecialchars($accountKey) . '</b>. Empreinte MikroTik mise à jour.</div>';
+                        } else {
+                            $msg_mgr = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> Impossible d’enregistrer le gérant.</div>';
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+if (isset($_POST['add_seller'])) {
+    $new_pass    = trim($_POST['new_pass']);
+    $new_session = trim(isset($_POST['new_session']) ? $_POST['new_session'] : $session);
+    if (!isset($API_ms) || !$API_ms_connected) {
+        $API_ms = new RouterosAPI();
+        $API_ms->debug = false;
+        $API_ms_connected = $API_ms->connect($iphost, $userhost, decrypt($passwdhost));
+    }
+    if ($API_ms_connected) {
+        $hotspotDefaultUsersRaw = $API_ms->comm("/ip/hotspot/user/print", array("?profile" => "default"));
+        $hotspotIpBindingRows = $API_ms->comm("/ip/hotspot/ip-binding/print");
+    }
+    $sellerCandidate = mikhmon_hotspot_find_account_identity_candidate($hotspotDefaultUsersRaw, $hotspotIpBindingRows, $_POST['new_user'], $sellers_data, $managers_data);
+    $new_user = is_array($sellerCandidate) ? $sellerCandidate['account_key'] : '';
+    $new_name = is_array($sellerCandidate) ? $sellerCandidate['display_name'] : '';
+    $sellerSource = is_array($sellerCandidate) && isset($sellerCandidate['source']) ? $sellerCandidate['source'] : '';
+
+    if ($new_user == '' || $new_pass == '' || $new_name == '' || $new_session == '') {
         $msg = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> ' . $_required_fields_msg . '</div>';
-    } elseif (isset($sellers_data[$new_user])) {
+    } elseif (!is_array($sellerCandidate) || (($sellerSource === 'hotspot_default' || $sellerSource === 'ip_binding') && trim((string)$sellerCandidate['id']) === '')) {
+        $msg = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> Sélectionnez un utilisateur Hotspot default ou un commentaire IP Binding.</div>';
+    } elseif (!$API_ms_connected) {
+        $msg = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> Connexion MikroTik impossible.</div>';
+    } elseif (isset($sellers_data[$new_user]) || isset($managers_data[$new_user])) {
         $msg = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> ' . $_seller_exists . '</div>';
     } else {
+        $routerUpdate = array();
+        if ($sellerSource === 'hotspot_default') {
+            $hotspotFootprint = mikhmon_hotspot_assignment_comment(isset($sellerCandidate['comment']) ? $sellerCandidate['comment'] : '', $new_session, 'seller', $new_user);
+            $routerUpdate = $API_ms->comm("/ip/hotspot/user/set", array(
+                ".id" => $sellerCandidate['id'],
+                "password" => $new_pass,
+                "comment" => $hotspotFootprint
+            ));
+        } elseif ($sellerSource === 'ip_binding') {
+            $hotspotFootprint = mikhmon_hotspot_assignment_comment(isset($sellerCandidate['comment']) ? $sellerCandidate['comment'] : '', $new_session, 'seller', $new_user);
+            $routerUpdate = $API_ms->comm("/ip/hotspot/ip-binding/set", array(
+                ".id" => $sellerCandidate['id'],
+                "comment" => $hotspotFootprint
+            ));
+        }
         $encrypted_pass = encrypt($new_pass);
-        file_put_contents($sellers_file, mikhmon_php_assignment_line('sellers_data', $new_user, array(
-            'password' => $encrypted_pass,
-            'name' => $new_name,
-            'session' => $new_session,
-            'commission' => 10,
-        )), FILE_APPEND | LOCK_EX);
-        $msg = '<div class="bg-success" style="padding:8px;border-radius:5px;"><i class="fa fa-check"></i> ' . $_seller . ' <b>' . $new_user . '</b> OK.<br><small>' . $_seller_id . ': <b>' . htmlspecialchars($new_user) . '</b> | ' . $_password . ': <b>' . htmlspecialchars($new_pass) . '</b></small></div>';
-        // Recharger la config
-        include($sellers_file);
+        if (!mikhmon_hotspot_routeros_response_ok($routerUpdate)) {
+            $msg = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> MikroTik a refusé la mise à jour du mot de passe ou du commentaire.</div>';
+        } elseif (file_put_contents($sellers_file, mikhmon_php_assignment_line('sellers_data', $new_user, array(
+              'password' => $encrypted_pass,
+              'name' => $new_name,
+              'session' => $new_session,
+              'commission' => 10,
+          )), FILE_APPEND | LOCK_EX) !== false) {
+            $msg = '<div class="bg-success" style="padding:8px;border-radius:5px;"><i class="fa fa-check"></i> ' . $_seller . ' <b>' . $new_user . '</b> OK.<br><small>' . $_seller_id . ': <b>' . htmlspecialchars($new_user) . '</b> | ' . $_password . ': <b>' . htmlspecialchars($new_pass) . '</b></small></div>';
+            include($sellers_file);
+        } else {
+            $msg = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> Impossible d’enregistrer le vendeur.</div>';
+        }
     }
 }
 
@@ -303,9 +424,27 @@ if (isset($_POST['add_seller'])) {
 if (isset($_POST['delete_seller'])) {
     $del = preg_replace('/[^a-zA-Z0-9_]/', '', $_POST['delete_seller']);
     if ($del != '') {
-        mikhmon_delete_assignment_line_in_file($sellers_file, 'sellers_data', $del);
-        $msg = '<div class="bg-warning" style="padding:8px;border-radius:5px;"><i class="fa fa-trash"></i> ' . $_seller . ' <b>' . htmlspecialchars($del) . '</b>.</div>';
-        unset($sellers_data[$del], $allSellerStock[$del]);
+        if (!isset($API_ms) || !$API_ms_connected) {
+            $API_ms = new RouterosAPI();
+            $API_ms->debug = false;
+            $API_ms_connected = $API_ms->connect($iphost, $userhost, decrypt($passwdhost));
+        }
+        if (!$API_ms_connected) {
+            $msg = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> Connexion MikroTik impossible : suppression annulée pour éviter la restauration automatique du compte.</div>';
+        } else {
+            $deleteHotspotUsers = $API_ms->comm("/ip/hotspot/user/print");
+            $deleteIpBindings = $API_ms->comm("/ip/hotspot/ip-binding/print");
+            $clearedFootprints = mikhmon_hotspot_clear_account_footprints($API_ms, $deleteHotspotUsers, $deleteIpBindings, $session, 'seller', $del);
+            if (!$clearedFootprints) {
+                $msg = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> MikroTik a refusé le retrait de l’empreinte du vendeur. Suppression annulée.</div>';
+            } else {
+                mikhmon_delete_assignment_line_in_file($sellers_file, 'sellers_data', $del);
+                $msg = '<div class="bg-warning" style="padding:8px;border-radius:5px;"><i class="fa fa-trash"></i> ' . $_seller . ' <b>' . htmlspecialchars($del) . '</b>.</div>';
+                unset($sellers_data[$del], $allSellerStock[$del]);
+                $hotspotDefaultUsersRaw = $API_ms->comm("/ip/hotspot/user/print", array("?profile" => "default"));
+                $hotspotIpBindingRows = $API_ms->comm("/ip/hotspot/ip-binding/print");
+            }
+        }
     }
 }
 
@@ -390,23 +529,58 @@ if (isset($_POST['set_commission'])) {
 
 // ── Ajouter un gérant ────────────────────────────────────────────────────────
 if (isset($_POST['add_manager'])) {
-    $nmu = mikhmon_account_key($_POST['nm_user']);
     $nmp = trim($_POST['nm_pass']);
-    $nmn = mikhmon_account_label($nmu);
-    $nms = trim($_POST['nm_session']);
-    if ($nmu == '' || $nmp == '' || $nmn == '') {
+    $nms = trim(isset($_POST['nm_session']) ? $_POST['nm_session'] : $session);
+    if (!isset($API_ms) || !$API_ms_connected) {
+        $API_ms = new RouterosAPI();
+        $API_ms->debug = false;
+        $API_ms_connected = $API_ms->connect($iphost, $userhost, decrypt($passwdhost));
+    }
+    if ($API_ms_connected) {
+        $hotspotDefaultUsersRaw = $API_ms->comm("/ip/hotspot/user/print", array("?profile" => "default"));
+        $hotspotIpBindingRows = $API_ms->comm("/ip/hotspot/ip-binding/print");
+    }
+    $managerCandidate = mikhmon_hotspot_find_account_identity_candidate($hotspotDefaultUsersRaw, $hotspotIpBindingRows, $_POST['nm_user'], $sellers_data, $managers_data);
+    $nmu = is_array($managerCandidate) ? $managerCandidate['account_key'] : '';
+    $nmn = is_array($managerCandidate) ? $managerCandidate['display_name'] : '';
+    $managerSource = is_array($managerCandidate) && isset($managerCandidate['source']) ? $managerCandidate['source'] : '';
+    if ($nmu == '' || $nmp == '' || $nmn == '' || $nms == '') {
         $msg_mgr = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> ' . $_required_fields_msg . '</div>';
-    } elseif (isset($managers_data[$nmu])) {
+    } elseif (!is_array($managerCandidate) || (($managerSource === 'hotspot_default' || $managerSource === 'ip_binding') && trim((string)$managerCandidate['id']) === '')) {
+        $msg_mgr = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> Sélectionnez un utilisateur Hotspot default ou un commentaire IP Binding.</div>';
+    } elseif (!$API_ms_connected) {
+        $msg_mgr = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> Connexion MikroTik impossible.</div>';
+    } elseif (isset($managers_data[$nmu]) || isset($sellers_data[$nmu])) {
         $msg_mgr = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> ' . (isset($_manager_exists) ? $_manager_exists : 'Already exists.') . '</div>';
     } else {
+        $routerUpdate = array();
+        if ($managerSource === 'hotspot_default') {
+            $hotspotFootprint = mikhmon_hotspot_assignment_comment(isset($managerCandidate['comment']) ? $managerCandidate['comment'] : '', $nms, 'manager', $nmu);
+            $routerUpdate = $API_ms->comm("/ip/hotspot/user/set", array(
+                ".id" => $managerCandidate['id'],
+                "password" => $nmp,
+                "comment" => $hotspotFootprint
+            ));
+        } elseif ($managerSource === 'ip_binding') {
+            $hotspotFootprint = mikhmon_hotspot_assignment_comment(isset($managerCandidate['comment']) ? $managerCandidate['comment'] : '', $nms, 'manager', $nmu);
+            $routerUpdate = $API_ms->comm("/ip/hotspot/ip-binding/set", array(
+                ".id" => $managerCandidate['id'],
+                "comment" => $hotspotFootprint
+            ));
+        }
         $ep = encrypt($nmp);
-        file_put_contents($managers_file, mikhmon_php_assignment_line('managers_data', $nmu, array(
-            'password' => $ep,
-            'name' => $nmn,
-            'session' => $nms,
-        )), FILE_APPEND | LOCK_EX);
-        $msg_mgr = '<div class="bg-success" style="padding:8px;border-radius:5px;"><i class="fa fa-check"></i> ' . (isset($_manager) ? $_manager : 'Manager') . ' <b>' . $nmu . '</b> OK.<br><small>' . $_seller_id . ': <b>' . htmlspecialchars($nmu) . '</b> | ' . $_password . ': <b>' . htmlspecialchars($nmp) . '</b></small></div>';
-        include($managers_file);
+        if (!mikhmon_hotspot_routeros_response_ok($routerUpdate)) {
+            $msg_mgr = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> MikroTik a refusé la mise à jour du mot de passe ou du commentaire.</div>';
+        } elseif (file_put_contents($managers_file, mikhmon_php_assignment_line('managers_data', $nmu, array(
+              'password' => $ep,
+              'name' => $nmn,
+              'session' => $nms,
+          )), FILE_APPEND | LOCK_EX) !== false) {
+            $msg_mgr = '<div class="bg-success" style="padding:8px;border-radius:5px;"><i class="fa fa-check"></i> ' . (isset($_manager) ? $_manager : 'Manager') . ' <b>' . $nmu . '</b> OK.<br><small>' . $_seller_id . ': <b>' . htmlspecialchars($nmu) . '</b> | ' . $_password . ': <b>' . htmlspecialchars($nmp) . '</b></small></div>';
+            include($managers_file);
+        } else {
+            $msg_mgr = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> Impossible d’enregistrer le gérant.</div>';
+        }
     }
 }
 // ── Supprimer un gérant ───────────────────────────────────────────────────────
@@ -414,9 +588,27 @@ if (isset($_POST['delete_manager'])) {
     $force_active_tab = 'managers';
     $dm = preg_replace('/[^a-zA-Z0-9_]/', '', $_POST['delete_manager']);
     if ($dm != '') {
-        mikhmon_delete_assignment_line_in_file($managers_file, 'managers_data', $dm);
-        $msg_mgr = '<div class="bg-warning" style="padding:8px;border-radius:5px;"><i class="fa fa-trash"></i> ' . (isset($_manager) ? $_manager : 'Manager') . ' <b>' . htmlspecialchars($dm) . '</b>.</div>';
-        unset($managers_data[$dm]);
+        if (!isset($API_ms) || !$API_ms_connected) {
+            $API_ms = new RouterosAPI();
+            $API_ms->debug = false;
+            $API_ms_connected = $API_ms->connect($iphost, $userhost, decrypt($passwdhost));
+        }
+        if (!$API_ms_connected) {
+            $msg_mgr = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> Connexion MikroTik impossible : suppression annulée pour éviter la restauration automatique du compte.</div>';
+        } else {
+            $deleteHotspotUsers = $API_ms->comm("/ip/hotspot/user/print");
+            $deleteIpBindings = $API_ms->comm("/ip/hotspot/ip-binding/print");
+            $clearedFootprints = mikhmon_hotspot_clear_account_footprints($API_ms, $deleteHotspotUsers, $deleteIpBindings, $session, 'manager', $dm);
+            if (!$clearedFootprints) {
+                $msg_mgr = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> MikroTik a refusé le retrait de l’empreinte du gérant. Suppression annulée.</div>';
+            } else {
+                mikhmon_delete_assignment_line_in_file($managers_file, 'managers_data', $dm);
+                $msg_mgr = '<div class="bg-warning" style="padding:8px;border-radius:5px;"><i class="fa fa-trash"></i> ' . (isset($_manager) ? $_manager : 'Manager') . ' <b>' . htmlspecialchars($dm) . '</b>.</div>';
+                unset($managers_data[$dm]);
+                $hotspotDefaultUsersRaw = $API_ms->comm("/ip/hotspot/user/print", array("?profile" => "default"));
+                $hotspotIpBindingRows = $API_ms->comm("/ip/hotspot/ip-binding/print");
+            }
+        }
     }
 }
 
@@ -484,6 +676,40 @@ foreach ((array)$data as $sesname => $row) {
 $available_sessions = array_unique($available_sessions);
 $defaultSellerAccount = mikhmon_default_account($sellers_data, 'vendeur', 'Vendeur');
 $defaultManagerAccount = mikhmon_default_account($managers_data, 'gerant', 'Gerant');
+if ($API_ms_connected && isset($API_ms)) {
+    $freshHotspotDefaultUsers = $API_ms->comm("/ip/hotspot/user/print", array("?profile" => "default"));
+    if (is_array($freshHotspotDefaultUsers)) {
+        $hotspotDefaultUsersRaw = $freshHotspotDefaultUsers;
+    }
+    $freshIpBindingRows = $API_ms->comm("/ip/hotspot/ip-binding/print");
+    if (is_array($freshIpBindingRows)) {
+        $hotspotIpBindingRows = $freshIpBindingRows;
+    }
+}
+$restoredAccounts = mikhmon_hotspot_restored_account_records($hotspotDefaultUsersRaw, $hotspotIpBindingRows, $session, $sellers_data, $managers_data);
+foreach ($restoredAccounts['sellers'] as $restoredKey => $restoredRecord) {
+    if (isset($sellers_data[$restoredKey]) || isset($managers_data[$restoredKey])) {
+        continue;
+    }
+    $storedRecord = $restoredRecord;
+    $storedRecord['password'] = encrypt($storedRecord['password']);
+    if (mikhmon_replace_assignment_line_in_file($sellers_file, 'sellers_data', $restoredKey, $storedRecord)) {
+        $sellers_data[$restoredKey] = $storedRecord;
+        $allSellerStock[$restoredKey] = isset($allSellerStock[$restoredKey]) ? $allSellerStock[$restoredKey] : array();
+    }
+}
+foreach ($restoredAccounts['managers'] as $restoredKey => $restoredRecord) {
+    if (isset($managers_data[$restoredKey]) || isset($sellers_data[$restoredKey])) {
+        continue;
+    }
+    $storedRecord = $restoredRecord;
+    $storedRecord['password'] = encrypt($storedRecord['password']);
+    if (mikhmon_replace_assignment_line_in_file($managers_file, 'managers_data', $restoredKey, $storedRecord)) {
+        $managers_data[$restoredKey] = $storedRecord;
+    }
+}
+$hotspotDefaultCandidates = mikhmon_hotspot_default_account_candidates($hotspotDefaultUsersRaw, $sellers_data, $managers_data);
+$accountIdentityCandidates = mikhmon_hotspot_account_identity_candidates($hotspotDefaultUsersRaw, $hotspotIpBindingRows, $sellers_data, $managers_data);
 $active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'sellers';
 if ($force_active_tab !== '') {
     $active_tab = $force_active_tab;
@@ -603,10 +829,75 @@ if (isset($_POST['admin_send_accounting_notice'])) {
     flex-direction: column;
     gap: 4px;
 }
+.hotspot-assign-card .admin-transfer-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.hotspot-assign-card .btn {
+    white-space: normal;
+}
 .transfer-label {
     font-weight: bold;
     font-size: 13px;
     color: #555;
+}
+.identity-form-note {
+    padding:10px 14px;
+    border-radius:5px;
+    margin-bottom:12px;
+    line-height:1.5;
+    overflow-wrap:anywhere;
+}
+.identity-create-form {
+    margin:0;
+}
+.identity-form-grid {
+    display:grid;
+    grid-template-columns:minmax(170px, 230px) minmax(0, 1fr);
+    gap:12px 16px;
+    align-items:center;
+}
+.identity-form-row {
+    display:contents;
+}
+.identity-form-label {
+    font-weight:bold;
+    line-height:1.35;
+    min-width:0;
+}
+.identity-form-label small {
+    font-weight:normal;
+    opacity:.86;
+}
+.identity-form-control {
+    min-width:0;
+}
+.identity-form-control .form-control {
+    width:100%;
+    max-width:100%;
+    min-width:0;
+    box-sizing:border-box;
+}
+.identity-form-help {
+    display:block;
+    margin-top:5px;
+    color:#f39c12;
+    line-height:1.35;
+}
+.identity-password-toggle {
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    margin-top:6px;
+    font-size:12px;
+    cursor:pointer;
+    line-height:1.35;
+}
+.identity-actions {
+    grid-column:2;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    flex-wrap:wrap;
 }
 .admin-accounting-cards { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:18px; }
 .admin-accounting-card { flex:1; min-width:150px; border-radius:8px; padding:14px 16px; }
@@ -685,6 +976,9 @@ if (isset($_POST['admin_send_accounting_notice'])) {
 }
 .table-responsive { overflow-x: auto; }
 @media (max-width: 900px) {
+    .hotspot-assign-card .admin-transfer-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
     .accounting-delete-panel {
       align-items:stretch;
       flex-direction:column;
@@ -706,7 +1000,11 @@ if (isset($_POST['admin_send_accounting_notice'])) {
     }
 }
 @media (max-width: 600px) {
+    .hotspot-assign-card .admin-transfer-grid,
     .admin-transfer-grid { grid-template-columns: 1fr; }
+    .hotspot-assign-card .btn {
+      width:100%;
+    }
     .admin-accounting-card { min-width:100%; }
     .admin-accounting-card-value {
       font-size:18px !important;
@@ -768,6 +1066,31 @@ if (isset($_POST['admin_send_accounting_notice'])) {
     }
     .accounting-responsive-table tfoot td:before { color:rgba(255,255,255,.82); }
 }
+@media (max-width: 640px) {
+    .identity-form-note {
+      padding:9px 11px;
+      font-size:12px;
+    }
+    .identity-form-note code {
+      white-space:normal;
+      overflow-wrap:anywhere;
+    }
+    .identity-form-grid { grid-template-columns: 1fr; }
+    .identity-form-row {
+      display:block;
+    }
+    .identity-form-label {
+      display:block;
+      margin-bottom:6px;
+    }
+    .identity-form-control {
+      margin-bottom:12px;
+    }
+    .identity-actions {
+      grid-column:1;
+    }
+    .identity-actions .btn { width:100%; white-space:normal; }
+}
 </style>
 
 <div class="row portal-admin-shell">
@@ -791,6 +1114,58 @@ if (isset($_POST['admin_send_accounting_notice'])) {
     <li><?= $_seller_step2 ?></li>
     <li><?= $_seller_step3 ?></li>
   </ol>
+</div>
+
+<!-- ── Assignation depuis les utilisateurs Hotspot default ── -->
+<div class="card box-bordered hotspot-assign-card" style="margin-bottom:15px;border-left:4px solid #34495e;">
+  <div class="card-header">
+    <h4 style="margin:0;"><i class="fa fa-random"></i> Assigner un utilisateur Hotspot default</h4>
+  </div>
+  <div class="card-body">
+    <p style="margin-top:0;color:#64748b;">
+      Sélectionnez un utilisateur existant dans <code>IP → Hotspot → Users</code> avec le profil <code>default</code>, renseignez son mot de passe, puis créez son accès local comme vendeur ou gérant. Le commentaire MikroTik garde l’empreinte du rôle et de la session.
+    </p>
+    <?php if (!$API_ms_connected): ?>
+      <div class="bg-danger" style="padding:10px 14px;border-radius:5px;">
+        <i class="fa fa-ban"></i> Connexion MikroTik indisponible : impossible de charger les utilisateurs Hotspot default.
+      </div>
+    <?php elseif (empty($hotspotDefaultCandidates)): ?>
+      <div class="bg-warning" style="padding:10px 14px;border-radius:5px;color:#243447;">
+        <i class="fa fa-info-circle"></i> Aucun utilisateur Hotspot non assigné avec le profil <code>default</code>.
+      </div>
+    <?php else: ?>
+      <form method="post" action="?id=sellers&session=<?= urlencode($session) ?>">
+        <?= csrf_field() ?>
+        <div class="admin-transfer-grid">
+          <div class="admin-transfer-group">
+            <label class="transfer-label" for="hotspot-default-user">Utilisateur profile default</label>
+            <select class="form-control" id="hotspot-default-user" name="hotspot_default_user" required>
+              <option value="">Sélectionner un utilisateur</option>
+              <?php foreach ($hotspotDefaultCandidates as $candidate): ?>
+                <option value="<?= htmlspecialchars($candidate['username']) ?>">
+                  <?= htmlspecialchars($candidate['username']) ?> — <?= htmlspecialchars($candidate['display_name']) ?>
+                </option>
+              <?php endforeach; ?>
+            </select>
+          </div>
+          <div class="admin-transfer-group">
+            <label class="transfer-label" for="hotspot-account-role">Rôle à créer</label>
+            <select class="form-control" id="hotspot-account-role" name="hotspot_account_role" required>
+              <option value="seller">Vendeur</option>
+              <option value="manager">Gérant</option>
+            </select>
+          </div>
+          <div class="admin-transfer-group">
+            <label class="transfer-label" for="hotspot-account-password">Mot de passe</label>
+            <input class="form-control" id="hotspot-account-password" name="hotspot_account_password" type="password" autocomplete="new-password" required>
+          </div>
+        </div>
+        <button type="submit" name="assign_hotspot_account" class="btn bg-primary">
+          <i class="fa fa-save"></i> Assigner le compte
+        </button>
+      </form>
+    <?php endif; ?>
+  </div>
 </div>
 
 <!-- ── Barre d'onglets ── -->
@@ -1252,61 +1627,61 @@ if (isset($_POST['admin_send_accounting_notice'])) {
 </div>
 
 <!-- ── Ajouter un vendeur ── -->
-<div class="card box-bordered">
+<div class="card box-bordered identity-create-card">
   <div class="card-header"><h4><i class="fa fa-user-plus"></i> <?= $_add_seller ?></h4></div>
   <div class="card-body">
-    <div class="bg-light" style="padding:10px 14px;border-left:4px solid #27ae60;border-radius:5px;margin-bottom:12px;">
-      <b><?= isset($_default_credentials) ? $_default_credentials : 'Default credentials' ?></b><br>
-      <?= $_seller_id ?>: <code><?= htmlspecialchars($defaultSellerAccount['username']) ?></code> |
-      <?= $_password ?>: <code><?= htmlspecialchars($defaultSellerAccount['password']) ?></code><br>
-      <small><?= isset($_default_credentials_note) ? $_default_credentials_note : 'Admin can change these values before creation and update the password later.' ?></small>
+    <div class="bg-light identity-form-note" style="border-left:4px solid #27ae60;">
+      <b>Identifiant depuis MikroTik</b><br>
+      <small>Choisissez soit un utilisateur <code>IP → Hotspot → Users</code> au profil <code>default</code>, soit un nom déjà présent dans les commentaires <code>IP → Hotspot → IP Bindings</code>.</small>
     </div>
-    <form autocomplete="off" method="post" action="">
+    <form class="identity-create-form identity-create-seller" autocomplete="off" method="post" action="">
       <?= csrf_field() ?>
-      <table class="table">
-        <tr>
-          <td class="align-middle"><?= $_seller_id ?> <small>(a-z, 0-9, _)</small></td>
-          <td>
-            <input class="form-control" type="text" name="new_user" id="seller-new-user"
-                   pattern="[a-zA-Z0-9_]+" title="a-z, 0-9, _"
-                   value="<?= htmlspecialchars($defaultSellerAccount['username']) ?>" required>
-          </td>
-        </tr>
-        <tr>
-          <td class="align-middle"><?= $_password ?></td>
-          <td>
-            <input class="form-control" id="seller-new-pass" type="password" name="new_pass" value="<?= htmlspecialchars($defaultSellerAccount['password']) ?>" required>
-            <label style="display:inline-flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;cursor:pointer;">
+      <div class="identity-form-grid">
+        <div class="identity-form-row">
+          <label class="identity-form-label" for="seller-new-user"><?= $_seller_id ?> <small>(a-z, 0-9, _)</small></label>
+          <div class="identity-form-control">
+            <select class="form-control" name="new_user" id="seller-new-user" required>
+              <option value="">Sélectionner un utilisateur default ou un commentaire IP Binding</option>
+              <?php foreach ($accountIdentityCandidates as $candidate): ?>
+                <option value="<?= htmlspecialchars($candidate['select_value']) ?>" data-label="<?= htmlspecialchars($candidate['display_name']) ?>">
+                  <?= htmlspecialchars($candidate['display_name']) ?>
+                </option>
+              <?php endforeach; ?>
+            </select>
+            <?php if (empty($accountIdentityCandidates)): ?>
+              <small class="identity-form-help">Aucun utilisateur Hotspot default ou commentaire IP Binding disponible.</small>
+            <?php endif; ?>
+          </div>
+        </div>
+        <div class="identity-form-row">
+          <label class="identity-form-label" for="seller-new-pass"><?= $_password ?></label>
+          <div class="identity-form-control">
+            <input class="form-control" id="seller-new-pass" type="password" name="new_pass" value="" required>
+            <label class="identity-password-toggle">
               <input type="checkbox" onclick="msTogglePassword('seller-new-pass', this)">
               <?= isset($_show_password) ? $_show_password : 'Afficher le mot de passe' ?>
             </label>
-          </td>
-        </tr>
-        <tr>
-          <td class="align-middle"><?= $_seller_display_name ?></td>
-          <td><input class="form-control" type="text" name="new_name" id="seller-new-name" value="<?= htmlspecialchars(mikhmon_account_label($defaultSellerAccount['username'])) ?>" readonly></td>
-        </tr>
-        <tr>
-          <td class="align-middle"><?= $_seller_session_router ?></td>
-          <td>
-            <select class="form-control" name="new_session" required>
-              <?php foreach ($available_sessions as $sn): ?>
-                <option value="<?= htmlspecialchars($sn) ?>"><?= htmlspecialchars($sn) ?></option>
-              <?php endforeach; ?>
-              <?php if (empty($available_sessions)): ?>
-                <option value=""><?= $_no_session_available ?></option>
-              <?php endif; ?>
-            </select>
-          </td>
-        </tr>
-        <tr>
-          <td colspan="2">
-            <button type="submit" name="add_seller" class="btn bg-primary">
-              <i class="fa fa-save"></i> <?= $_add_seller ?>
-            </button>
-          </td>
-        </tr>
-      </table>
+          </div>
+        </div>
+        <div class="identity-form-row">
+          <label class="identity-form-label" for="seller-new-name"><?= $_seller_display_name ?></label>
+          <div class="identity-form-control">
+            <input class="form-control" type="text" name="new_name" id="seller-new-name" value="" readonly>
+          </div>
+        </div>
+        <div class="identity-form-row">
+          <label class="identity-form-label" for="seller-new-session-view"><?= $_seller_session_router ?></label>
+          <div class="identity-form-control">
+            <input type="hidden" name="new_session" value="<?= htmlspecialchars($session) ?>">
+            <input class="form-control" id="seller-new-session-view" type="text" value="<?= htmlspecialchars($session) ?>" readonly>
+          </div>
+        </div>
+        <div class="identity-actions">
+          <button type="submit" name="add_seller" class="btn bg-primary" <?= empty($accountIdentityCandidates) ? 'disabled' : '' ?>>
+            <i class="fa fa-save"></i> <?= $_add_seller ?>
+          </button>
+        </div>
+      </div>
     </form>
   </div>
 </div>
@@ -1461,57 +1836,61 @@ if (isset($_POST['admin_send_accounting_notice'])) {
     </div>
 
     <!-- Ajouter un gérant -->
-    <div class="card box-bordered">
+    <div class="card box-bordered identity-create-card">
       <div class="card-header"><h5><i class="fa fa-user-plus"></i> <?= isset($_add_manager) ? $_add_manager : 'Add Manager' ?></h5></div>
       <div class="card-body">
-        <div class="bg-light" style="padding:10px 14px;border-left:4px solid #8e44ad;border-radius:5px;margin-bottom:12px;">
-          <b><?= isset($_default_credentials) ? $_default_credentials : 'Default credentials' ?></b><br>
-          <?= isset($_seller_id) ? $_seller_id : 'Identifier' ?>: <code><?= htmlspecialchars($defaultManagerAccount['username']) ?></code> |
-          <?= $_password ?>: <code><?= htmlspecialchars($defaultManagerAccount['password']) ?></code><br>
-          <small><?= isset($_default_credentials_note) ? $_default_credentials_note : 'Admin can change these values before creation and update the password later.' ?></small>
+        <div class="bg-light identity-form-note" style="border-left:4px solid #8e44ad;">
+          <b>Identifiant depuis MikroTik</b><br>
+          <small>Choisissez soit un utilisateur <code>IP → Hotspot → Users</code> au profil <code>default</code>, soit un nom déjà présent dans les commentaires <code>IP → Hotspot → IP Bindings</code>.</small>
         </div>
-        <form autocomplete="off" method="post" action="?id=sellers&session=<?= urlencode($session) ?>&tab=managers">
+        <form class="identity-create-form identity-create-manager" autocomplete="off" method="post" action="?id=sellers&session=<?= urlencode($session) ?>&tab=managers">
           <?= csrf_field() ?>
-          <table class="table">
-            <tr>
-              <td class="align-middle"><?= isset($_seller_id) ? $_seller_id : 'Identifier' ?> <small>(a-z, 0-9, _)</small></td>
-              <td><input class="form-control" type="text" name="nm_user" id="manager-new-user" pattern="[a-zA-Z0-9_]+" value="<?= htmlspecialchars($defaultManagerAccount['username']) ?>" required></td>
-            </tr>
-            <tr>
-              <td class="align-middle"><?= $_password ?></td>
-              <td>
-                <input class="form-control" id="manager-new-pass" type="password" name="nm_pass" value="<?= htmlspecialchars($defaultManagerAccount['password']) ?>" required>
-                <label style="display:inline-flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;cursor:pointer;">
+          <div class="identity-form-grid">
+            <div class="identity-form-row">
+              <label class="identity-form-label" for="manager-new-user"><?= isset($_seller_id) ? $_seller_id : 'Identifier' ?> <small>(a-z, 0-9, _)</small></label>
+              <div class="identity-form-control">
+                <select class="form-control" name="nm_user" id="manager-new-user" required>
+                  <option value="">Sélectionner un utilisateur default ou un commentaire IP Binding</option>
+                  <?php foreach ($accountIdentityCandidates as $candidate): ?>
+                    <option value="<?= htmlspecialchars($candidate['select_value']) ?>" data-label="<?= htmlspecialchars($candidate['display_name']) ?>">
+                      <?= htmlspecialchars($candidate['display_name']) ?>
+                    </option>
+                  <?php endforeach; ?>
+                </select>
+                <?php if (empty($accountIdentityCandidates)): ?>
+                  <small class="identity-form-help">Aucun utilisateur Hotspot default ou commentaire IP Binding disponible.</small>
+                <?php endif; ?>
+              </div>
+            </div>
+            <div class="identity-form-row">
+              <label class="identity-form-label" for="manager-new-pass"><?= $_password ?></label>
+              <div class="identity-form-control">
+                <input class="form-control" id="manager-new-pass" type="password" name="nm_pass" value="" required>
+                <label class="identity-password-toggle">
                   <input type="checkbox" onclick="msTogglePassword('manager-new-pass', this)">
                   <?= isset($_show_password) ? $_show_password : 'Afficher le mot de passe' ?>
                 </label>
-              </td>
-            </tr>
-            <tr>
-              <td class="align-middle"><?= isset($_seller_display_name) ? $_seller_display_name : 'Display Name' ?></td>
-              <td><input class="form-control" type="text" name="nm_name" id="manager-new-name" value="<?= htmlspecialchars(mikhmon_account_label($defaultManagerAccount['username'])) ?>" readonly></td>
-            </tr>
-            <tr>
-              <td class="align-middle"><?= isset($_seller_session_router) ? $_seller_session_router : 'Session' ?></td>
-              <td>
-                <select class="form-control" name="nm_session" required>
-                  <?php foreach ($available_sessions as $sn): ?>
-                    <option value="<?= htmlspecialchars($sn) ?>"><?= htmlspecialchars($sn) ?></option>
-                  <?php endforeach; ?>
-                  <?php if (empty($available_sessions)): ?>
-                    <option value=""><?= isset($_no_session_available) ? $_no_session_available : 'No session' ?></option>
-                  <?php endif; ?>
-                </select>
-              </td>
-            </tr>
-            <tr>
-              <td colspan="2">
-                <button type="submit" name="add_manager" class="btn" style="background:#8e44ad;color:#fff;">
+              </div>
+            </div>
+            <div class="identity-form-row">
+              <label class="identity-form-label" for="manager-new-name"><?= isset($_seller_display_name) ? $_seller_display_name : 'Display Name' ?></label>
+              <div class="identity-form-control">
+                <input class="form-control" type="text" name="nm_name" id="manager-new-name" value="" readonly>
+              </div>
+            </div>
+            <div class="identity-form-row">
+              <label class="identity-form-label" for="manager-new-session-view"><?= isset($_seller_session_router) ? $_seller_session_router : 'Session' ?></label>
+              <div class="identity-form-control">
+                <input type="hidden" name="nm_session" value="<?= htmlspecialchars($session) ?>">
+                <input class="form-control" id="manager-new-session-view" type="text" value="<?= htmlspecialchars($session) ?>" readonly>
+              </div>
+            </div>
+            <div class="identity-actions">
+                <button type="submit" name="add_manager" class="btn" style="background:#8e44ad;color:#fff;" <?= empty($accountIdentityCandidates) ? 'disabled' : '' ?>>
                   <i class="fa fa-save"></i> <?= isset($_add_manager) ? $_add_manager : 'Add Manager' ?>
                 </button>
-              </td>
-            </tr>
-          </table>
+            </div>
+          </div>
         </form>
       </div>
     </div>
@@ -2115,11 +2494,13 @@ function msBindAccountAutoName(userId, nameId) {
   if (!user || !name) return;
 
   function sync() {
-    var label = msAccountLabel(user.value);
+    var selected = user.options && user.selectedIndex >= 0 ? user.options[user.selectedIndex] : null;
+    var label = selected && selected.getAttribute('data-label') ? selected.getAttribute('data-label') : msAccountLabel(user.value);
     name.value = label;
   }
 
   user.addEventListener('input', sync);
+  user.addEventListener('change', sync);
   user.addEventListener('blur', sync);
   sync();
 }

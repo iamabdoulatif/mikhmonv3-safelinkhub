@@ -37,7 +37,7 @@ if (!isset($_SESSION["mikhmon"])) {
     $passwdhost = '';
     $hotspotname = '';
     $dnsname = '';
-    $currency = 'Rp';
+    $currency = 'fcfa';
     $areload = 10;
     $iface = 1;
     $infolp = '';
