@@ -628,99 +628,163 @@
 /* ─────────────────────────────────────────────────────────────
    STOCK BOARD (vue mutuelle des vendeurs)
    ───────────────────────────────────────────────────────────── */
-.stock-board-grid {
+.seller-portal .stock-board-grid,
+.manager-portal .stock-board-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
   margin-bottom: 20px;
 }
 .stock-board-card {
-  border-radius: 10px;
-  border: 1px solid #e0e0e0;
+  background: #343a40;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 10px 22px rgba(0,0,0,.16);
   overflow: hidden;
-}
-.stock-board-card-self {
-  border-color: #20a8d8;
+  min-width: 0;
 }
 .stock-board-card-header {
-  padding: 12px 16px;
-  background: #f8f9fa;
-  border-bottom: 1px solid #e0e0e0;
+  min-height: 68px;
+  padding: 14px 16px;
+  background: #4dbd74;
+  border-bottom: 1px solid rgba(0,0,0,.16);
   display: flex;
   align-items: center;
   gap: 10px;
   justify-content: space-between;
 }
+.stock-board-card-blue .stock-board-card-header,
 .stock-board-card-self .stock-board-card-header {
-  background: #e6f6fb;
-  border-bottom-color: #20a8d8;
+  background: #51a9d5;
+}
+.stock-board-card-green .stock-board-card-header {
+  background: #4dbd74;
+}
+.stock-board-card-yellow .stock-board-card-header {
+  background: #ffc107;
+}
+.stock-board-card-red .stock-board-card-header {
+  background: #f86c6b;
+}
+.stock-board-card-self {
+  border-color: rgba(81,169,213,.85);
+  box-shadow: inset 0 0 0 1px rgba(81,169,213,.35), 0 10px 22px rgba(0,0,0,.18);
+}
+.stock-board-card-heading {
+  min-width: 0;
 }
 .stock-board-card-title {
+  align-items: center;
+  color: #fff;
+  display: flex;
+  font-size: 15px;
   font-weight: bold;
-  font-size: 14px;
-  color: #111;
+  gap: 6px;
+  line-height: 1.25;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .stock-board-card-self-label {
+  color: rgba(255,255,255,.88);
   font-size: 11px;
-  color: #20a8d8;
+  font-weight: 600;
+  line-height: 1.2;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
 }
 .stock-board-total-badge {
-  border-radius: 10px;
-  padding: 2px 10px;
-  font-weight: bold;
-  font-size: 13px;
-  background: #d6f0df;
-  color: #2e7d32;
-}
-.stock-board-total-badge.empty {
-  background: #f5f5f5;
-  color: #bbb;
-}
-.stock-board-card-body {
-  padding: 12px 16px;
-}
-.stock-profile-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 5px 0;
-  border-bottom: 1px solid #f0f0f0;
-  gap: 8px;
-}
-.stock-profile-row:last-child { border-bottom: none; }
-.stock-profile-name { font-size: 13px; flex: 1; }
-.stock-profile-qty  { font-weight: bold; font-size: 14px; min-width: 30px; text-align: right; }
-.stock-profile-qty.qty-low { color: #f86c6b; }
-.stock-profile-qty.qty-ok  { color: #4dbd74; }
-.stock-request-btn {
-  background: #20a8d8;
+  background: rgba(255,255,255,.22);
+  border-radius: 14px;
   color: #fff;
-  border: none;
-  border-radius: 4px;
-  padding: 3px 10px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: opacity .2s;
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: bold;
+  line-height: 1.2;
+  padding: 4px 12px;
   white-space: nowrap;
 }
-.stock-request-btn:hover { opacity: .85; }
-.stock-request-all-btn {
-  background: #ffc107;
-  color: #fff;
+.stock-board-total-badge.empty {
+  background: rgba(255,255,255,.18);
+  color: rgba(255,255,255,.72);
+}
+.stock-board-card-body {
+  padding: 16px;
+}
+.stock-profile-row {
+  align-items: center;
+  border-bottom: 1px solid rgba(255,255,255,.22);
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) minmax(32px, auto) auto;
+  min-height: 34px;
+  padding: 6px 0;
+}
+.stock-profile-row:last-child { border-bottom: none; }
+.stock-profile-name {
+  color: #f8fafc;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.25;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.stock-profile-qty {
+  font-size: 14px;
+  font-weight: bold;
+  line-height: 1;
+  min-width: 30px;
+  text-align: right;
+  white-space: nowrap;
+}
+.stock-profile-qty.qty-low { color: #ff7776; }
+.stock-profile-qty.qty-ok  { color: #59ca80; }
+.stock-request-btn {
+  align-items: center;
+  background: #51a9d5;
   border: none;
   border-radius: 5px;
-  padding: 6px 12px;
+  color: #fff !important;
+  cursor: pointer;
+  display: inline-flex;
   font-size: 12px;
   font-weight: bold;
-  cursor: pointer;
-  transition: opacity .2s;
-  width: 100%;
-  margin-top: 10px;
+  gap: 4px;
+  justify-content: center;
+  line-height: 1.2;
+  min-height: 28px;
+  padding: 5px 10px;
+  text-decoration: none !important;
+  transition: opacity .2s, background .2s;
+  white-space: nowrap;
 }
-.stock-request-all-btn:hover { opacity: .85; }
+.stock-request-btn:hover { background: #3f99c7; opacity: .95; }
+.stock-transfer-link { background: #4dbd74; }
+.stock-transfer-link:hover { background: #42aa65; }
+.stock-request-all-btn {
+  background: #4dbd74;
+  border: none;
+  border-radius: 5px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: bold;
+  line-height: 1.25;
+  margin-top: 12px;
+  min-height: 34px;
+  padding: 8px 12px;
+  transition: opacity .2s, background .2s;
+  width: 100%;
+}
+.stock-request-all-btn:hover { background: #42aa65; opacity: .95; }
+.manager-stock-board-grid .stock-profile-row {
+  grid-template-columns: minmax(0, 1fr) minmax(32px, auto);
+}
+.manager-vendors-stock-card .card-body {
+  padding: 14px;
+}
 .stock-empty-note {
-  color: #aaa;
-  font-size: 13px;
+  color: rgba(248,250,252,.72);
+  font-size: 14px;
   font-style: italic;
   padding: 6px 0;
 }
@@ -799,37 +863,61 @@
   .notif-item-actions { width: 100%; }
   .notif-item-actions form { flex: 1; }
   .btn-accept, .btn-decline { width: 100%; text-align: center; }
+}
 
-  /* 1 colonne sur mobile portrait, 2 si l'écran est assez large */
-  .stock-board-grid { grid-template-columns: 1fr; }
+@media (max-width: 1200px) {
+  .seller-portal .stock-board-grid,
+  .manager-portal .stock-board-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
 
-  /* Ligne profil : nom + qté sur la gauche, bouton à droite */
+@media (max-width: 950px) {
+  .seller-portal .stock-board-grid,
+  .manager-portal .stock-board-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .seller-portal .stock-board-grid,
+  .manager-portal .stock-board-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .stock-board-card-header {
+    align-items: flex-start;
+  }
+  .stock-board-card-body {
+    padding: 12px;
+  }
   .stock-profile-row {
-    flex-wrap: wrap;
-    gap: 4px 6px;
+    grid-template-columns: minmax(0, 1fr) minmax(32px, auto);
+    gap: 6px 8px;
   }
   .stock-profile-name { font-size: 12px; }
   .stock-profile-qty  { font-size: 13px; }
-  .stock-request-btn  {
-    padding: 3px 8px;
-    font-size: 11px;
+  .stock-request-btn {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    min-height: 30px;
+    padding: 5px 8px;
+    width: 100%;
   }
-
-  /* Bouton "Demander un transfert" pleine largeur */
   .stock-request-all-btn {
     font-size: 12px;
     padding: 8px 10px;
   }
+  .manager-stock-board-grid .stock-profile-row {
+    grid-template-columns: minmax(0, 1fr) minmax(32px, auto);
+  }
 }
 
 @media (max-width: 420px) {
-  /* Très petits écrans : 1 seule colonne */
-  .stock-board-grid { grid-template-columns: 1fr; }
-
   .stock-board-card-body { padding: 10px 12px; }
   .stock-board-card-header { padding: 10px 12px; }
   .stock-profile-name { font-size: 12px; }
-  .stock-request-btn  { font-size: 11px; padding: 3px 7px; }
+  .stock-request-btn  { font-size: 11px; padding: 5px 7px; }
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -929,6 +1017,36 @@
 .mgr-month-filter .btn.bg-primary {
   border-color: #2980b9;
   color: #fff !important;
+}
+
+.manager-overview-period-form {
+  align-items: flex-end;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(130px, 1.2fr) repeat(3, minmax(110px, 1fr)) minmax(110px, .8fr);
+  margin-bottom: 10px;
+}
+
+.manager-overview-period-form .portal-filter-item {
+  min-width: 0;
+}
+
+.manager-overview-period-form label {
+  color: #cbd5e1;
+  display: block;
+  font-size: 12px;
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.manager-overview-period-form .form-control {
+  min-height: 34px;
+  width: 100%;
+}
+
+.manager-overview-period-actions .btn {
+  min-height: 34px;
+  width: 100%;
 }
 
 .ms-tab-bar {
@@ -1685,6 +1803,10 @@
   .mgr-quick-actions .btn,
   .mgr-month-filter .btn {
     flex: 1 1 100%;
+  }
+
+  .manager-overview-period-form {
+    grid-template-columns: 1fr;
   }
 
   .ms-tab-bar {

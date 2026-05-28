@@ -21,7 +21,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 // hide all error
 error_reporting(0);
 
-ini_set('max_execution_time', 300);
+ini_set('max_execution_time', 600);
 
 $isStandaloneGenerator = basename(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH)) === 'generateuser.php';
 $appPrefix = $isStandaloneGenerator ? '../' : './';
@@ -35,6 +35,253 @@ if (!function_exists('mikhmon_format_money_amount')) {
 }
 if (!function_exists('formatBytes')) {
 	include_once(__DIR__ . '/../lib/formatbytesbites.php');
+}
+
+if (!function_exists('mikhmon_hotspot_user_add_payload')) {
+	function mikhmon_hotspot_user_add_payload($name, $password, $server, $profile, $timelimit, $datalimit, $comment)
+	{
+		return array(
+			"server" => "$server",
+			"name" => "$name",
+			"password" => "$password",
+			"profile" => "$profile",
+			"limit-uptime" => "$timelimit",
+			"limit-bytes-total" => "$datalimit",
+			"comment" => "$comment",
+		);
+	}
+
+	function mikhmon_hotspot_add_users_slow($API, $users, $server, $profile, $timelimit, $datalimit, $comment)
+	{
+		foreach ($users as $user) {
+			$API->comm("/ip/hotspot/user/add", mikhmon_hotspot_user_add_payload(
+				$user['name'],
+				$user['password'],
+				$server,
+				$profile,
+				$timelimit,
+				$datalimit,
+				$comment
+			));
+		}
+	}
+
+	function mikhmon_hotspot_user_add_script_line($user, $server, $profile, $timelimit, $datalimit, $comment)
+	{
+		$parts = array(
+			'/ip hotspot user add',
+			'server=' . mikhmon_routeros_quote($server),
+			'name=' . mikhmon_routeros_quote($user['name']),
+			'password=' . mikhmon_routeros_quote($user['password']),
+			'profile=' . mikhmon_routeros_quote($profile),
+			'limit-uptime=' . mikhmon_routeros_quote($timelimit),
+			'limit-bytes-total=' . mikhmon_routeros_quote($datalimit),
+			'comment=' . mikhmon_routeros_quote($comment),
+		);
+
+		return ':do { ' . implode(' ', $parts) . ' } on-error={};';
+	}
+
+	function mikhmon_hotspot_script_id($scripts)
+	{
+		if (!is_array($scripts)) {
+			return '';
+		}
+
+		foreach ($scripts as $script) {
+			if (is_array($script) && isset($script['.id']) && $script['.id'] !== '') {
+				return $script['.id'];
+			}
+		}
+
+		return '';
+	}
+
+	function mikhmon_hotspot_add_users_fast($API, $users, $server, $profile, $timelimit, $datalimit, $comment)
+	{
+		$threshold = function_exists('mikhmon_hotspot_fast_generate_threshold') ? mikhmon_hotspot_fast_generate_threshold() : 20;
+		if (count($users) < $threshold) {
+			return false;
+		}
+
+		$chunkSize = function_exists('mikhmon_hotspot_fast_generate_chunk_size') ? mikhmon_hotspot_fast_generate_chunk_size() : 150;
+		$chunkSize = max(1, (int) $chunkSize);
+		$chunks = array_chunk($users, $chunkSize);
+
+		foreach ($chunks as $chunkIndex => $chunk) {
+			$lines = array();
+			foreach ($chunk as $user) {
+				$lines[] = mikhmon_hotspot_user_add_script_line($user, $server, $profile, $timelimit, $datalimit, $comment);
+			}
+
+			$scriptName = substr('mikhmon-gen-' . date('His') . '-' . mt_rand(1000, 9999) . '-' . ($chunkIndex + 1), 0, 63);
+			$addResponse = $API->comm('/system/script/add', array(
+				'name' => $scriptName,
+				'source' => implode('', $lines),
+				'policy' => 'read,write,test',
+				'comment' => 'mikhmon-fast-generate',
+			));
+
+			if (mikhmon_routeros_response_error($addResponse) !== '') {
+				mikhmon_hotspot_add_users_slow($API, array_slice($users, $chunkIndex * $chunkSize), $server, $profile, $timelimit, $datalimit, $comment);
+				return true;
+			}
+
+			$scriptRows = $API->comm('/system/script/print', array('?name' => $scriptName));
+			if (mikhmon_routeros_response_error($scriptRows) !== '') {
+				mikhmon_hotspot_add_users_slow($API, array_slice($users, $chunkIndex * $chunkSize), $server, $profile, $timelimit, $datalimit, $comment);
+				return true;
+			}
+
+			$scriptId = mikhmon_hotspot_script_id($scriptRows);
+			if ($scriptId === '') {
+				mikhmon_hotspot_add_users_slow($API, array_slice($users, $chunkIndex * $chunkSize), $server, $profile, $timelimit, $datalimit, $comment);
+				return true;
+			}
+
+			$runResponse = $API->comm('/system/script/run', array('.id' => $scriptId));
+			$runError = mikhmon_routeros_response_error($runResponse);
+			$API->comm('/system/script/remove', array('numbers' => $scriptId));
+
+			if ($runError !== '') {
+				mikhmon_hotspot_add_users_slow($API, array_slice($users, $chunkIndex * $chunkSize), $server, $profile, $timelimit, $datalimit, $comment);
+				return true;
+			}
+
+		}
+
+		return true;
+	}
+
+	function mikhmon_hotspot_existing_user_name_map($API)
+	{
+		$names = array();
+		$rows = $API->comm('/ip/hotspot/user/print', array('.proplist' => 'name'));
+		if (mikhmon_routeros_response_error($rows) !== '' || !is_array($rows)) {
+			return $names;
+		}
+
+		foreach ($rows as $row) {
+			if (is_array($row) && isset($row['name']) && trim((string) $row['name']) !== '') {
+				$names[(string) $row['name']] = true;
+			}
+		}
+
+		return $names;
+	}
+
+	function mikhmon_hotspot_accept_unique_name($name, &$usedNames)
+	{
+		$name = (string) $name;
+		if ($name === '' || isset($usedNames[$name])) {
+			return false;
+		}
+
+		$usedNames[$name] = true;
+		return true;
+	}
+
+	function mikhmon_hotspot_numeric_password($length)
+	{
+		$length = (int) $length;
+		if ($length < 3 || $length > 8) {
+			$length = 4;
+		}
+
+		return randN($length);
+	}
+
+	function mikhmon_hotspot_random_name_part($char, $length)
+	{
+		$length = max(1, (int) $length);
+		if ($char == "lower") {
+			return randLC($length);
+		}
+		if ($char == "upper") {
+			return randUC($length);
+		}
+		if ($char == "upplow") {
+			return randULC($length);
+		}
+		if ($char == "mix") {
+			return randNLC($length);
+		}
+		if ($char == "mix1") {
+			return randNUC($length);
+		}
+		if ($char == "mix2") {
+			return randNULC($length);
+		}
+		if ($char == "num") {
+			return randN($length);
+		}
+
+		return randNLC($length);
+	}
+
+	function mikhmon_hotspot_candidate_credentials($mode, $char, $userl, $prefix)
+	{
+		$userl = (int) $userl;
+		$prefix = (string) $prefix;
+
+		if ($mode == "up") {
+			$name = $prefix . mikhmon_hotspot_random_name_part($char, $userl);
+			return array(
+				'name' => $name,
+				'password' => mikhmon_hotspot_numeric_password($userl),
+			);
+		}
+
+		$a = array("1" => "", "", 1, 2, 2, 3, 3, 4);
+		$shuf = max(1, $userl - (int) (isset($a[$userl]) ? $a[$userl] : 2));
+		if ($char == "num" || $char == "mix" || $char == "mix1" || $char == "mix2") {
+			$name = $prefix . mikhmon_hotspot_random_name_part($char, $userl);
+		} else {
+			$name = $prefix . mikhmon_hotspot_random_name_part($char, $shuf);
+			if ($userl == 3) {
+				$name .= randN(1);
+			} elseif ($userl == 4 || $userl == 5) {
+				$name .= randN(2);
+			} elseif ($userl == 6 || $userl == 7) {
+				$name .= randN(3);
+			} elseif ($userl == 8) {
+				$name .= randN(4);
+			}
+		}
+
+		return array(
+			'name' => $name,
+			'password' => $name,
+		);
+	}
+
+	function mikhmon_hotspot_unique_fallback_name($prefix, &$usedNames)
+	{
+		static $fallbackCounter = 0;
+		do {
+			$fallbackCounter++;
+			$name = (string) $prefix . 'T' . date('His') . strtoupper(base_convert($fallbackCounter, 10, 36));
+		} while (isset($usedNames[$name]));
+
+		$usedNames[$name] = true;
+		return $name;
+	}
+
+	function mikhmon_hotspot_unique_credentials($mode, $char, $userl, $prefix, &$usedNames)
+	{
+		for ($attempt = 0; $attempt < 2000; $attempt++) {
+			$candidate = mikhmon_hotspot_candidate_credentials($mode, $char, $userl, $prefix);
+			if (mikhmon_hotspot_accept_unique_name($candidate['name'], $usedNames)) {
+				return $candidate;
+			}
+		}
+
+		$name = mikhmon_hotspot_unique_fallback_name($prefix, $usedNames);
+		return array(
+			'name' => $name,
+			'password' => $mode == "up" ? mikhmon_hotspot_numeric_password($userl) : $name,
+		);
+	}
 }
 
 if ($isStandaloneGenerator) {
@@ -124,6 +371,7 @@ if (!isset($_SESSION["mikhmon"]) && empty($_SESSION['manager_username'])) {
 	include_once($appPrefix . 'include/sellers_config.php');
 	$sessionSellers = array();
 	$generationError = '';
+	$maxGenerateQty = mikhmon_generate_ticket_limit();
 	$selectedSellerId = isset($_POST['seller_id']) ? preg_replace('/[^a-zA-Z0-9_]/', '', trim($_POST['seller_id'])) : '';
 	if (!empty($sellers_data) && is_array($sellers_data)) {
 			foreach ($sellers_data as $sellerKey => $sellerData) {
@@ -139,7 +387,7 @@ if (!isset($_SESSION["mikhmon"]) && empty($_SESSION['manager_username'])) {
 	if (isset($_POST['qty'])) {
 		csrf_guard();
 		
-		$qty = ($_POST['qty']);
+		$qty = max(1, (int) $_POST['qty']);
 		$server = ($_POST['server']);
 		$user = ($_POST['user']);
 		$userl = ($_POST['userl']);
@@ -162,12 +410,18 @@ if (!isset($_SESSION["mikhmon"]) && empty($_SESSION['manager_username'])) {
 			$datalimit = $datalimit * $mbgb;
 		}
 			$adcomment = preg_replace('/[^a-zA-Z0-9_\- ]/', '', $adcomment);
-			if ($sellerId != "" && !isset($sessionSellers[$sellerId])) {
+			if ($qty > $maxGenerateQty) {
+				$generationError = 'La génération est limitée à ' . $maxGenerateQty . ' tickets par lot.';
+			}
+			if ($generationError === '') {
+				if ($qty > 500 && (int)$userl < 6) {
+					$generationError = 'Pour générer plus de 500 tickets, utilisez une longueur de code de 6 caractères minimum.';
+				}
+			}
+			if ($generationError === '' && $sellerId != "" && !isset($sessionSellers[$sellerId])) {
 				$sellerId = "";
 			}
-			if (!empty($sessionSellers) && $sellerId == "") {
-				$generationError = isset($_transfer_select_vendor) ? strip_tags($_transfer_select_vendor) : 'Select a vendor.';
-			} else {
+			if ($generationError === '') {
 				if ($sellerId != "") {
 					$sellerSuffix = "-" . strtolower($sellerId);
 					$normalizedComment = strtolower($adcomment);
@@ -195,123 +449,19 @@ if (!isset($_SESSION["mikhmon"]) && empty($_SESSION['manager_username'])) {
 			$data = $gen;
 			fwrite($handle, $data);
 
-			$a = array("1" => "", "", 1, 2, 2, 3, 3, 4);
+			$batchUsers = array();
+			$usedHotspotNames = mikhmon_hotspot_existing_user_name_map($API);
 
-			if ($user == "up") {
-				for ($i = 1; $i <= $qty; $i++) {
-					if ($char == "lower") {
-						$u[$i] = randLC($userl);
-					} elseif ($char == "upper") {
-						$u[$i] = randUC($userl);
-					} elseif ($char == "upplow") {
-						$u[$i] = randULC($userl);
-					} elseif ($char == "mix") {
-						$u[$i] = randNLC($userl);
-					} elseif ($char == "mix1") {
-						$u[$i] = randNUC($userl);
-					} elseif ($char == "mix2") {
-						$u[$i] = randNULC($userl);
-					}
-					if ($userl == 3) {
-						$p[$i] = randN(3);
-					} elseif ($userl == 4) {
-						$p[$i] = randN(4);
-					} elseif ($userl == 5) {
-						$p[$i] = randN(5);
-					} elseif ($userl == 6) {
-						$p[$i] = randN(6);
-					} elseif ($userl == 7) {
-						$p[$i] = randN(7);
-					} elseif ($userl == 8) {
-						$p[$i] = randN(8);
-					}
-
-					$u[$i] = "$prefix$u[$i]";
-				}
-
-				for ($i = 1; $i <= $qty; $i++) {
-					$API->comm("/ip/hotspot/user/add", array(
-						"server" => "$server",
-						"name" => "$u[$i]",
-						"password" => "$p[$i]",
-						"profile" => "$profile",
-						"limit-uptime" => "$timelimit",
-						"limit-bytes-total" => "$datalimit",
-						"comment" => "$commt",
-					));
-				}
+			for ($i = 1; $i <= $qty; $i++) {
+				$credentials = mikhmon_hotspot_unique_credentials($user, $char, $userl, $prefix, $usedHotspotNames);
+				$u[$i] = $credentials['name'];
+				$p[$i] = $credentials['password'];
+				$batchUsers[] = $credentials;
 			}
 
-			if ($user == "vc") {
-				$shuf = ($userl - $a[$userl]);
-				for ($i = 1; $i <= $qty; $i++) {
-					if ($char == "lower") {
-						$u[$i] = randLC($shuf);
-					} elseif ($char == "upper") {
-						$u[$i] = randUC($shuf);
-					} elseif ($char == "upplow") {
-						$u[$i] = randULC($shuf);
-					}
-					if ($userl == 3) {
-						$p[$i] = randN(1);
-					} elseif ($userl == 4 || $userl == 5) {
-						$p[$i] = randN(2);
-					} elseif ($userl == 6 || $userl == 7) {
-						$p[$i] = randN(3);
-					} elseif ($userl == 8) {
-						$p[$i] = randN(4);
-					}
-
-					$u[$i] = "$prefix$u[$i]$p[$i]";
-
-					if ($char == "num") {
-						if ($userl == 3) {
-							$p[$i] = randN(3);
-						} elseif ($userl == 4) {
-							$p[$i] = randN(4);
-						} elseif ($userl == 5) {
-							$p[$i] = randN(5);
-						} elseif ($userl == 6) {
-							$p[$i] = randN(6);
-						} elseif ($userl == 7) {
-							$p[$i] = randN(7);
-						} elseif ($userl == 8) {
-							$p[$i] = randN(8);
-						}
-
-						$u[$i] = "$prefix$p[$i]";
-					}
-					if ($char == "mix") {
-						$p[$i] = randNLC($userl);
-
-
-						$u[$i] = "$prefix$p[$i]";
-					}
-					if ($char == "mix1") {
-						$p[$i] = randNUC($userl);
-
-
-						$u[$i] = "$prefix$p[$i]";
-					}
-					if ($char == "mix2") {
-						$p[$i] = randNULC($userl);
-
-
-						$u[$i] = "$prefix$p[$i]";
-					}
-
-				}
-				for ($i = 1; $i <= $qty; $i++) {
-					$API->comm("/ip/hotspot/user/add", array(
-						"server" => "$server",
-						"name" => "$u[$i]",
-						"password" => "$u[$i]",
-						"profile" => "$profile",
-						"limit-uptime" => "$timelimit",
-						"limit-bytes-total" => "$datalimit",
-						"comment" => "$commt",
-					));
-				}
+			$addedFast = mikhmon_hotspot_add_users_fast($API, $batchUsers, $server, $profile, $timelimit, $datalimit, $commt);
+			if (!$addedFast) {
+				mikhmon_hotspot_add_users_slow($API, $batchUsers, $server, $profile, $timelimit, $datalimit, $commt);
 			}
 
 
@@ -462,7 +612,7 @@ if (!isset($_SESSION["mikhmon"]) && empty($_SESSION['manager_username'])) {
 </div>
 <table class="table">
   <tr>
-    <td class="align-middle"><?= $_qty ?></td><td><div><input class="form-control " type="number" name="qty" min="1" max="500" value="1" required="1"></div></td>
+    <td class="align-middle"><?= $_qty ?></td><td><div><input class="form-control " type="number" name="qty" min="1" max="<?= (int)$maxGenerateQty ?>" value="1" required="1"><small style="display:block;color:#aaa;margin-top:4px;">Max <?= (int)$maxGenerateQty ?> tickets par lot.</small></div></td>
   </tr>
   <tr>
     <td class="align-middle">Server</td>
@@ -550,28 +700,28 @@ if (!isset($_SESSION["mikhmon"]) && empty($_SESSION['manager_username'])) {
       </div>
     </td>
   </tr>
-		<tr>
-	    <td class="align-middle"><?= isset($_seller) ? $_seller : 'Vendeur' ?></td>
-	    <td>
-		    	<select class="form-control " name="seller_id"<?= !empty($sessionSellers) ? ' required="1"' : ' disabled' ?>>
-		    		<?php if (empty($sessionSellers)): ?>
-		    		<option value=""><?= isset($_seller) ? $_seller : 'Vendeur' ?> indisponible pour cette session</option>
-		    		<?php else: ?>
-		    		<option value=""><?= isset($_transfer_select_vendor) ? $_transfer_select_vendor : 'Select a vendor' ?></option>
-		    		<?php foreach ($sessionSellers as $sellerKey => $sellerData): ?>
-		    			<option value="<?= htmlspecialchars($sellerKey) ?>"<?= $selectedSellerId === $sellerKey ? ' selected' : '' ?>><?= htmlspecialchars($sellerData['name']) ?> (<?= htmlspecialchars($sellerKey) ?>)</option>
-		    		<?php endforeach; ?>
-		    		<?php endif; ?>
-		    	</select>
-	    	<small style="display:block;padding-top:6px;color:#9aa0a6;">
-	    		<?php if (empty($sessionSellers)): ?>
-	    			<?= isset($_create_seller_first) ? $_create_seller_first : 'Create a seller first in <b>Vendors</b> for this session before assigning this batch.' ?>
-	    		<?php else: ?>
-	    			<?= isset($_seller_step2) ? strip_tags($_seller_step2) : 'Select a vendor to assign generated tickets and make them transferable.' ?>
-	    		<?php endif; ?>
-	    	</small>
-	    </td>
-	  </tr>
+	<tr>
+		<td class="align-middle"><?= isset($_seller) ? $_seller : 'Vendeur' ?></td>
+		<td>
+			<select class="form-control " name="seller_id"<?= empty($sessionSellers) ? ' disabled' : '' ?>>
+				<?php if (empty($sessionSellers)): ?>
+				<option value="">Stock général - aucun vendeur disponible</option>
+				<?php else: ?>
+				<option value=""<?= $selectedSellerId === '' ? ' selected' : '' ?>>Stock général - distribuer plus tard</option>
+				<?php foreach ($sessionSellers as $sellerKey => $sellerData): ?>
+					<option value="<?= htmlspecialchars($sellerKey) ?>"<?= $selectedSellerId === $sellerKey ? ' selected' : '' ?>><?= htmlspecialchars($sellerData['name']) ?> (<?= htmlspecialchars($sellerKey) ?>)</option>
+				<?php endforeach; ?>
+				<?php endif; ?>
+			</select>
+			<small style="display:block;padding-top:6px;color:#9aa0a6;">
+				<?php if (empty($sessionSellers)): ?>
+					Aucun vendeur n'est disponible. Le lot sera généré en <b>stock général</b> et pourra être distribué plus tard après création des vendeurs.
+				<?php else: ?>
+					Choisissez un vendeur pour lui attribuer le lot immédiatement, ou laissez <b>Stock général</b> pour générer maintenant et distribuer plus tard.
+				<?php endif; ?>
+			</small>
+		</td>
+	</tr>
 		<tr>
 	    <td class="align-middle"><?= $_comment ?></td><td><input class="form-control " type="text" title="No special characters" id="comment" autocomplete="off" name="adcomment" value=""></td>
 	  </tr>

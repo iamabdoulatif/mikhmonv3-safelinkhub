@@ -970,55 +970,59 @@ if ($accept_error): echo '<div class="alert-danger"><i class="fa fa-ban"></i> ' 
 </div>
 <?php endif; ?>
 
+<div class="stock-board-grid">
+<?php $stockToneClasses = array('stock-board-card-blue', 'stock-board-card-green', 'stock-board-card-yellow', 'stock-board-card-red'); ?>
+<?php $stockToneIndex = 0; ?>
 <?php foreach ($allSellersStock as $sk => $sdata): ?>
 <?php $sellerTotal = array_sum($sdata['stock']); ?>
-<div class="card seller-dash-card" style="margin-bottom:14px;">
-  <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-    <h3 style="margin:0;">
-      <i class="fa fa-<?= $sdata['is_self'] ? 'user' : 'user-o' ?>"></i>
-      <?= htmlspecialchars($sdata['name']) ?>
+<?php $stockToneClass = $sdata['is_self'] ? 'stock-board-card-self' : $stockToneClasses[$stockToneIndex % count($stockToneClasses)]; ?>
+<?php $stockToneIndex++; ?>
+<div class="stock-board-card <?= $stockToneClass ?>">
+  <div class="stock-board-card-header">
+    <div class="stock-board-card-heading">
+      <div class="stock-board-card-title">
+        <i class="fa fa-<?= $sdata['is_self'] ? 'user' : 'user-o' ?>"></i>
+        <?= htmlspecialchars($sdata['name']) ?>
+      </div>
       <?php if ($sdata['is_self']): ?>
-      <small style="font-size:12px;font-weight:normal;color:#20a8d8;margin-left:6px;"><?= isset($_stock_your) ? $_stock_your : 'Votre stock' ?></small>
+      <div class="stock-board-card-self-label"><?= isset($_stock_your) ? $_stock_your : 'Votre stock' ?></div>
       <?php endif; ?>
-    </h3>
+    </div>
     <span class="stock-board-total-badge<?= $sellerTotal === 0 ? ' empty' : '' ?>">
       <?= $sellerTotal ?> vcr
     </span>
   </div>
-  <div class="card-body" style="padding:10px 12px 4px;">
+  <div class="stock-board-card-body">
     <?php if (empty($sdata['stock'])): ?>
       <div class="stock-empty-note"><i class="fa fa-inbox"></i> <?= isset($_stock_no_ticket) ? $_stock_no_ticket : 'No tickets available' ?></div>
     <?php else: ?>
-    <div class="row dashboard-hotspot-grid">
-      <?php $sbColors = ['bg-blue','bg-green','bg-yellow','bg-red']; $sbci = 0; ?>
       <?php foreach ($sdata['stock'] as $prof => $qty): ?>
-      <div class="col-3 col-box-6">
-        <div class="box <?= $qty <= 5 ? 'bg-red' : $sbColors[$sbci % 4] ?> bmh-75">
-          <?php if ($sdata['is_self']): ?>
-          <a href="./sellers.php?action=transfer">
-          <?php else: ?>
-          <a href="#" onclick="openReqModal('<?= htmlspecialchars($sk, ENT_QUOTES) ?>','<?= htmlspecialchars($sdata['name'], ENT_QUOTES) ?>','<?= htmlspecialchars($prof, ENT_QUOTES) ?>',<?= (int)$qty ?>);return false;">
-          <?php endif; ?>
-            <h1><?= $qty ?><span class="box-stat-unit"> vcr</span></h1>
-            <div><i class="fa fa-tag"></i> <?= htmlspecialchars($prof) ?></div>
-          </a>
-        </div>
+      <div class="stock-profile-row">
+        <span class="stock-profile-name"><?= htmlspecialchars($prof) ?></span>
+        <span class="stock-profile-qty <?= $qty <= 5 ? 'qty-low' : 'qty-ok' ?>"><?= (int)$qty ?></span>
+        <?php if ($sdata['is_self']): ?>
+        <a class="stock-request-btn stock-transfer-link" href="./sellers.php?action=transfer">
+          <i class="fa fa-exchange"></i> <?= isset($_transfer_submit) ? $_transfer_submit : 'Transfer' ?>
+        </a>
+        <?php else: ?>
+        <button type="button" class="stock-request-btn"
+                onclick="openReqModal('<?= htmlspecialchars($sk, ENT_QUOTES) ?>','<?= htmlspecialchars($sdata['name'], ENT_QUOTES) ?>','<?= htmlspecialchars($prof, ENT_QUOTES) ?>',<?= (int)$qty ?>);return false;">
+          <i class="fa fa-arrow-circle-left"></i> <?= isset($_transfer_req_send) ? $_transfer_req_send : 'Demander' ?>
+        </button>
+        <?php endif; ?>
       </div>
-      <?php $sbci++; ?>
       <?php endforeach; ?>
-    </div>
-    <?php if (!$sdata['is_self']): ?>
-    <div style="margin:8px 0;">
+      <?php if (!$sdata['is_self']): ?>
       <button type="button" class="stock-request-all-btn"
               onclick="openReqModal('<?= htmlspecialchars($sk, ENT_QUOTES) ?>','<?= htmlspecialchars($sdata['name'], ENT_QUOTES) ?>','',0)">
         <i class="fa fa-exchange"></i> <?= isset($_stock_request_all) ? $_stock_request_all : 'Request a transfer…' ?>
       </button>
-    </div>
-    <?php endif; ?>
+      <?php endif; ?>
     <?php endif; ?>
   </div>
 </div>
 <?php endforeach; ?>
+</div>
 <?php endif; ?>
 
 <?php $sentRequests = tr_get_sent_by($sellerUsername, 15); ?>

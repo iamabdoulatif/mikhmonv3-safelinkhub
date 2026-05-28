@@ -18,6 +18,21 @@ if (!function_exists('mikhmon_month_map')) {
     );
   }
 
+  function mikhmon_generate_ticket_limit()
+  {
+    return 1000;
+  }
+
+  function mikhmon_hotspot_fast_generate_threshold()
+  {
+    return 20;
+  }
+
+  function mikhmon_hotspot_fast_generate_chunk_size()
+  {
+    return 150;
+  }
+
   function mikhmon_normalize_sale_date($rawDate)
   {
     $rawDate = trim((string) $rawDate);
@@ -104,6 +119,117 @@ if (!function_exists('mikhmon_month_map')) {
         continue;
       }
 
+      $sales[] = $sale;
+    }
+
+    return $sales;
+  }
+
+  function mikhmon_sale_iso_date($rawDate)
+  {
+    $rawDate = trim((string) $rawDate);
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $rawDate)) {
+      return $rawDate;
+    }
+
+    return mikhmon_iso_date_from_day_key($rawDate);
+  }
+
+  function mikhmon_sales_period_bounds($period, $year = null, $month = null, $week = null)
+  {
+    $period = strtolower(trim((string) $period));
+    if (!in_array($period, array('week', 'month', 'year'), true)) {
+      $period = 'month';
+    }
+
+    $year = (int) $year;
+    if ($year < 2018 || $year > 2100) {
+      $year = (int) date('Y');
+    }
+
+    $month = (int) $month;
+    if ($month < 1 || $month > 12) {
+      $month = (int) date('n');
+    }
+
+    $week = (int) $week;
+    if ($week < 1 || $week > 53) {
+      $week = (int) date('W');
+    }
+
+    $months = mikhmon_month_map();
+
+    if ($period === 'week') {
+      $start = new DateTime();
+      $start->setISODate($year, $week, 1);
+      $end = clone $start;
+      $end->modify('+6 days');
+      return array(
+        'period' => 'week',
+        'year' => $year,
+        'month' => (int) $start->format('n'),
+        'week' => (int) $start->format('W'),
+        'from' => $start->format('Y-m-d'),
+        'to' => $end->format('Y-m-d'),
+        'label' => 'Semaine ' . sprintf('%02d', $week) . ' · ' . $start->format('Y-m-d') . ' au ' . $end->format('Y-m-d'),
+        'month_key' => $months[$start->format('m')] . $start->format('Y'),
+      );
+    }
+
+    if ($period === 'year') {
+      return array(
+        'period' => 'year',
+        'year' => $year,
+        'month' => $month,
+        'week' => $week,
+        'from' => sprintf('%04d-01-01', $year),
+        'to' => sprintf('%04d-12-31', $year),
+        'label' => 'Année ' . $year,
+        'month_key' => $months[sprintf('%02d', $month)] . $year,
+      );
+    }
+
+    $monthKey = $months[sprintf('%02d', $month)] . $year;
+    $bounds = mikhmon_accounting_month_bounds($monthKey);
+
+    return array(
+      'period' => 'month',
+      'year' => $year,
+      'month' => $month,
+      'week' => $week,
+      'from' => $bounds['from'],
+      'to' => $bounds['to'],
+      'label' => ucfirst($months[sprintf('%02d', $month)]) . ' ' . $year,
+      'month_key' => $monthKey,
+    );
+  }
+
+  function mikhmon_filter_sale_scripts_by_iso_range($scripts, $fromIso, $toIso)
+  {
+    $fromIso = mikhmon_sale_iso_date($fromIso);
+    $toIso = mikhmon_sale_iso_date($toIso);
+    if ($fromIso === '' || $toIso === '') {
+      return array();
+    }
+    if ($fromIso > $toIso) {
+      $tmp = $fromIso;
+      $fromIso = $toIso;
+      $toIso = $tmp;
+    }
+
+    $sales = array();
+    foreach (mikhmon_unique_sale_scripts($scripts) as $script) {
+      $sale = (isset($script['date']) && isset($script['price'])) ? $script : mikhmon_parse_sale_script($script);
+      $saleIso = mikhmon_sale_iso_date(isset($sale['date']) ? $sale['date'] : '');
+      if ($saleIso === '' || $saleIso < $fromIso || $saleIso > $toIso) {
+        continue;
+      }
+      if (!isset($sale['date'])) {
+        $sale['date'] = mikhmon_normalize_sale_date($saleIso);
+      }
+      if (!isset($sale['month_key']) || $sale['month_key'] === '') {
+        $sale['month_key'] = mikhmon_sale_month_key($sale['date']);
+      }
       $sales[] = $sale;
     }
 

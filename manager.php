@@ -13,6 +13,8 @@ $action = isset($_GET['action']) ? $_GET['action'] : 'dashboard';
 $idbl   = isset($_GET['idbl'])   ? $_GET['idbl']   : '';
 $idhr   = isset($_GET['idhr'])   ? $_GET['idhr']   : '';
 $managerAllowedActions = array('dashboard', 'overview', 'accounting', 'tickets', 'vendors', 'logout');
+$idbls = array(1=>"jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec");
+$idblf = array(1=>"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec");
 
 include_once('./lib/routeros_api.class.php');
 include_once('./lib/formatbytesbites.php');
@@ -31,6 +33,39 @@ include('./include/managers_config.php');
 include_once('./include/auth.php');
 include_once('./include/csrf.php');
 include_once('./include/transfer_log.php');
+
+$overviewReportPeriod = isset($_GET['period']) ? strtolower(trim((string) $_GET['period'])) : 'month';
+if (!in_array($overviewReportPeriod, array('week', 'month', 'year'), true)) {
+    $overviewReportPeriod = 'month';
+}
+$overviewReportYear = isset($_GET['year']) ? (int) $_GET['year'] : (int) date('Y');
+$overviewReportMonth = isset($_GET['month']) ? (int) $_GET['month'] : (int) date('n');
+$overviewReportWeek = isset($_GET['week']) ? (int) $_GET['week'] : (int) date('W');
+if (preg_match('/^([a-z]{3})(\d{4})$/', strtolower($idbl), $overviewMonthMatch) && !isset($_GET['period'])) {
+    $overviewMonths = array_flip(mikhmon_month_map());
+    if (isset($overviewMonths[$overviewMonthMatch[1]])) {
+        $overviewReportPeriod = 'month';
+        $overviewReportMonth = (int) $overviewMonths[$overviewMonthMatch[1]];
+        $overviewReportYear = (int) $overviewMonthMatch[2];
+    }
+}
+$overviewReportBounds = mikhmon_sales_period_bounds($overviewReportPeriod, $overviewReportYear, $overviewReportMonth, $overviewReportWeek);
+$overviewReportPeriod = $overviewReportBounds['period'];
+$overviewReportYear = $overviewReportBounds['year'];
+$overviewReportMonth = $overviewReportBounds['month'];
+$overviewReportWeek = $overviewReportBounds['week'];
+$overviewReportFromIso = $overviewReportBounds['from'];
+$overviewReportToIso = $overviewReportBounds['to'];
+$overviewReportLabel = $overviewReportBounds['label'];
+$overviewReportMonthKey = $overviewReportBounds['month_key'];
+$overviewReportPeriodLabel = 'Cette période';
+if ($overviewReportPeriod === 'week') {
+    $overviewReportPeriodLabel = 'Cette semaine';
+} elseif ($overviewReportPeriod === 'month') {
+    $overviewReportPeriodLabel = 'Ce mois';
+} elseif ($overviewReportPeriod === 'year') {
+    $overviewReportPeriodLabel = 'Cette année';
+}
 
 if (!function_exists('mikhmon_filter_session_sellers')) {
     function mikhmon_filter_session_sellers($sellersData, $sessionName) {
@@ -154,6 +189,8 @@ if ($manager_logged_in) {
         $getSales = $API->comm("/system/script/print", array("?comment" => "mikhmon"));
         if (strlen($idhr) > 0) {
             $allSales = mikhmon_filter_sale_scripts($getSales, $idhr, '');
+        } elseif ($action === 'overview') {
+            $allSales = mikhmon_filter_sale_scripts_by_iso_range($getSales, $overviewReportFromIso, $overviewReportToIso);
         } elseif (strlen($idbl) > 0) {
             $allSales = mikhmon_filter_sale_scripts($getSales, '', $idbl);
         } else {
@@ -495,10 +532,6 @@ if ($manager_logged_in && $action === 'transfer' && isset($_POST['do_global_tran
         }
     }
 }
-
-// ── Helpers date ─────────────────────────────────────────────────────────────
-$idbls = array(1=>"jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec");
-$idblf = array(1=>"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec");
 
 // ── Sessions disponibles ─────────────────────────────────────────────────────
 $available_sessions = array();
@@ -1199,13 +1232,7 @@ if (in_array($action, ['overview','accounting'])) {
   <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
     <h3 style="margin:0;"><i class="fa fa-bar-chart"></i>
       <?= isset($_manager_overview) ? $_manager_overview : 'Vendors Overview' ?>
-      <?php
-        if (strlen($idbl) > 0) {
-            $m1 = substr($idbl,0,3); $y1 = substr($idbl,3,4);
-            $fm = array_search($m1, $idbls);
-            echo ' — <span style="color:#8e44ad;">' . ($idblf[$fm] ?? ucfirst($m1)) . ' ' . $y1 . '</span>';
-        }
-      ?>
+      — <span style="color:#8e44ad;"><?= htmlspecialchars($overviewReportLabel) ?></span>
     </h3>
     <small style="color:#cbd5e1;font-size:12px;">
       <i class="fa fa-refresh"></i> <?= isset($_auto_reload) ? $_auto_reload : 'Auto-refresh' ?>
@@ -1215,17 +1242,52 @@ if (in_array($action, ['overview','accounting'])) {
   <div class="card-body">
   <div class="container-fluid manager-overview-container">
 
-    <!-- Filtre mois -->
+    <!-- Filtre période -->
     <div class="row manager-overview-row manager-overview-filter-row" style="margin-bottom:18px;">
       <div class="col-12">
-      <div class="mgr-month-filter">
+      <form method="get" action="./manager.php" class="manager-overview-period-form">
+        <input type="hidden" name="action" value="overview">
+        <div class="portal-filter-item">
+          <label><i class="fa fa-sliders"></i> Période</label>
+          <select name="period" class="form-control">
+            <option value="week" <?= $overviewReportPeriod === 'week' ? 'selected' : '' ?>>Semaine</option>
+            <option value="month" <?= $overviewReportPeriod === 'month' ? 'selected' : '' ?>>Mois</option>
+            <option value="year" <?= $overviewReportPeriod === 'year' ? 'selected' : '' ?>>Année</option>
+          </select>
+        </div>
+        <div class="portal-filter-item">
+          <label><i class="fa fa-calendar-o"></i> Mois</label>
+          <select name="month" class="form-control">
+            <?php for ($mi = 1; $mi <= 12; $mi++): ?>
+              <option value="<?= $mi ?>" <?= $overviewReportMonth === $mi ? 'selected' : '' ?>><?= htmlspecialchars($idblf[$mi]) ?></option>
+            <?php endfor; ?>
+          </select>
+        </div>
+        <div class="portal-filter-item">
+          <label><i class="fa fa-calendar-check-o"></i> Semaine</label>
+          <input type="number" name="week" class="form-control" min="1" max="53" value="<?= (int)$overviewReportWeek ?>">
+        </div>
+        <div class="portal-filter-item">
+          <label><i class="fa fa-calendar"></i> Année</label>
+          <select name="year" class="form-control">
+            <?php for ($yy = (int)date('Y') + 1; $yy >= 2018; $yy--): ?>
+              <option value="<?= $yy ?>" <?= $overviewReportYear === $yy ? 'selected' : '' ?>><?= $yy ?></option>
+            <?php endfor; ?>
+          </select>
+        </div>
+        <div class="portal-filter-item manager-overview-period-actions">
+          <label>&nbsp;</label>
+          <button type="submit" class="btn bg-primary"><i class="fa fa-filter"></i> Afficher</button>
+        </div>
+      </form>
+      <div class="mgr-month-filter manager-overview-month-shortcuts">
         <?php
           $curY = date("Y");
           for ($mi = 1; $mi <= 12; $mi++) {
               $ml  = $idbls[$mi]; $ms = $idblf[$mi];
               $tag = $ml . $curY;
-              $active = ($idbl === $tag) ? 'bg-primary' : '';
-              echo '<a href="./manager.php?action=overview&idbl=' . $tag . '" class="btn btn-sm ' . $active . '" style="padding:4px 10px;">' . $ms . '</a>';
+              $active = ($overviewReportPeriod === 'month' && $overviewReportMonth === $mi && $overviewReportYear === (int)$curY) ? 'bg-primary' : '';
+              echo '<a href="./manager.php?action=overview&period=month&month=' . $mi . '&year=' . $curY . '&idbl=' . $tag . '" class="btn btn-sm ' . $active . '" style="padding:4px 10px;">' . $ms . '</a>';
           }
         ?>
       </div>
@@ -1265,7 +1327,7 @@ if (in_array($action, ['overview','accounting'])) {
       </div>
       <div class="col-3 col-box-6 manager-bootstrap-col">
       <div class="manager-color-card bg-green" style="background:#eaf4fb;border-radius:8px;padding:12px 16px;border-left:4px solid #2980b9;">
-        <div style="font-size:11px;color:#2980b9;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;"><i class="fa fa-calendar"></i> Ce mois</div>
+        <div style="font-size:11px;color:#2980b9;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;"><i class="fa fa-calendar"></i> <?= htmlspecialchars($overviewReportPeriodLabel) ?></div>
         <div style="font-size:22px;font-weight:bold;color:#2980b9;"><?= $gtAllMonth ?> <small style="font-size:13px;">vcr</small></div>
         <div style="font-size:13px;color:#1a6fa0;"><?= mikhmon_format_money_amount($gtAllRevMonth, $currency, $cekindo) ?></div>
       </div>
@@ -1338,8 +1400,8 @@ if (in_array($action, ['overview','accounting'])) {
               <th><?= isset($_seller) ? $_seller : 'Vendeur' ?></th>
               <th class="text-center" style="color:#c0392b;"><i class="fa fa-sun-o"></i> <?= isset($_today) ? $_today : 'Aujourd\'hui' ?></th>
               <th class="text-center" style="color:#c0392b;">CA <?= isset($_today) ? $_today : 'Auj.' ?></th>
-              <th class="text-center" style="color:#2980b9;"><i class="fa fa-calendar"></i> <?= isset($_this_month) ? $_this_month : 'Ce mois' ?></th>
-              <th class="text-center" style="color:#2980b9;">CA mois</th>
+              <th class="text-center" style="color:#2980b9;"><i class="fa fa-calendar"></i> <?= htmlspecialchars($overviewReportPeriodLabel) ?></th>
+              <th class="text-center" style="color:#2980b9;">CA période</th>
               <th class="text-center" style="color:#27ae60;"><i class="fa fa-archive"></i> Stock</th>
             </tr>
           </thead>
@@ -1366,7 +1428,7 @@ if (in_array($action, ['overview','accounting'])) {
                 <?= $vd['today'] > 0 ? mikhmon_format_money_amount($vd['today'] * $vd['price'], $currency, $cekindo) : '<span style="color:#ccc;">—</span>' ?>
                 </span>
               </td>
-              <td class="text-center" data-label="<?= isset($_this_month) ? $_this_month : 'Ce mois-ci' ?>">
+              <td class="text-center" data-label="<?= htmlspecialchars($overviewReportPeriodLabel) ?>">
                 <span class="manager-overview-cell-value">
                 <?php if ($vd['total'] > 0): ?>
                   <span style="background:#e8f0fe;color:#2980b9;border-radius:10px;padding:1px 8px;font-weight:bold;"><?= $vd['total'] ?></span>
@@ -1375,7 +1437,7 @@ if (in_array($action, ['overview','accounting'])) {
                 <?php endif; ?>
                 </span>
               </td>
-              <td class="text-center" data-label="CA mois" style="color:#2980b9;">
+              <td class="text-center" data-label="CA période" style="color:#2980b9;">
                 <span class="manager-overview-cell-value">
                 <?= $vd['total'] > 0 ? mikhmon_format_money_amount($vd['total'] * $vd['price'], $currency, $cekindo) : '<span style="color:#ccc;">—</span>' ?>
                 </span>
@@ -1403,8 +1465,8 @@ if (in_array($action, ['overview','accounting'])) {
               <td data-label="Total"><span class="manager-overview-cell-value"><i class="fa fa-sigma"></i> TOTAL</span></td>
               <td class="text-center" data-label="<?= isset($_today) ? $_today : 'Aujourd\'hui' ?>"><span class="manager-overview-cell-value"><?= $profTotToday ?></span></td>
               <td class="text-center" data-label="CA <?= isset($_today) ? $_today : 'Auj.' ?>"><span class="manager-overview-cell-value"><?= mikhmon_format_money_amount($profTotToday * $unitPrice, $currency, $cekindo) ?></span></td>
-              <td class="text-center" data-label="<?= isset($_this_month) ? $_this_month : 'Ce mois-ci' ?>"><span class="manager-overview-cell-value"><?= $profTotMonth ?></span></td>
-              <td class="text-center" data-label="CA mois"><span class="manager-overview-cell-value"><?= mikhmon_format_money_amount($profTotMonth * $unitPrice, $currency, $cekindo) ?></span></td>
+              <td class="text-center" data-label="<?= htmlspecialchars($overviewReportPeriodLabel) ?>"><span class="manager-overview-cell-value"><?= $profTotMonth ?></span></td>
+              <td class="text-center" data-label="CA période"><span class="manager-overview-cell-value"><?= mikhmon_format_money_amount($profTotMonth * $unitPrice, $currency, $cekindo) ?></span></td>
               <td class="text-center" data-label="Stock"><span class="manager-overview-cell-value"><?= $profTotStock ?></span></td>
             </tr>
           </tfoot>
@@ -2041,6 +2103,54 @@ if (in_array($action, ['overview','accounting'])) {
       </div>
     </div>
 
+    <!-- Stock par vendeur -->
+    <div class="row manager-vendors-row manager-vendors-stock-row">
+    <div class="col-12">
+    <div class="card box-bordered manager-vendors-stock-card" style="margin-bottom:15px;">
+      <div class="card-header"><h4><i class="fa fa-archive"></i> Stock par vendeur</h4></div>
+      <div class="card-body">
+        <?php if (empty($managerSellersData)): ?>
+          <p class="text-center stock-empty-note"><i class="fa fa-info-circle"></i> <?= isset($_no_seller_registered) ? $_no_seller_registered : 'No vendor registered.' ?></p>
+        <?php else: ?>
+        <div class="stock-board-grid manager-stock-board-grid">
+          <?php foreach ($managerSellersData as $sk => $sd): ?>
+          <?php
+            $profiles = isset($allSellerStock[$sk]) ? $allSellerStock[$sk] : array();
+            $sellerStockTotal = array_sum($profiles);
+          ?>
+          <div class="stock-board-card">
+            <div class="stock-board-card-header">
+              <div class="stock-board-card-heading">
+                <div class="stock-board-card-title">
+                  <i class="fa fa-user-o"></i> <?= htmlspecialchars(isset($sd['name']) ? $sd['name'] : $sk) ?>
+                </div>
+                <div class="stock-board-card-self-label"><?= htmlspecialchars($sk) ?></div>
+              </div>
+              <span class="stock-board-total-badge<?= $sellerStockTotal === 0 ? ' empty' : '' ?>">
+                <?= $sellerStockTotal ?> vcr
+              </span>
+            </div>
+            <div class="stock-board-card-body">
+              <?php if (empty($profiles)): ?>
+                <div class="stock-empty-note"><i class="fa fa-inbox"></i> <?= isset($_stock_no_ticket) ? $_stock_no_ticket : 'No tickets available' ?></div>
+              <?php else: ?>
+                <?php foreach ($profiles as $prof => $qty): ?>
+                <div class="stock-profile-row manager-stock-profile-row">
+                  <span class="stock-profile-name"><?= htmlspecialchars($prof) ?></span>
+                  <span class="stock-profile-qty <?= $qty <= 5 ? 'qty-low' : 'qty-ok' ?>"><?= (int)$qty ?></span>
+                </div>
+                <?php endforeach; ?>
+              <?php endif; ?>
+            </div>
+          </div>
+          <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+      </div>
+    </div>
+    </div>
+    </div>
+
     <!-- Liste -->
     <div class="row manager-vendors-row manager-vendors-list-row">
     <div class="col-12">
@@ -2313,7 +2423,8 @@ if (in_array($action, ['overview','accounting'])) {
           </div>
           <div class="portal-filter-item col-3 col-box-12 manager-bootstrap-col">
             <label class="transfer-label">Quantité</label>
-            <input type="number" name="qty" min="1" max="500" value="10" required class="form-control">
+            <input type="number" name="qty" min="1" max="<?= (int)mikhmon_generate_ticket_limit() ?>" value="10" required class="form-control">
+            <small style="display:block;color:#aaa;margin-top:4px;">Max <?= (int)mikhmon_generate_ticket_limit() ?> tickets par lot.</small>
           </div>
           <div class="portal-filter-item col-3 col-box-12 manager-bootstrap-col">
             <label class="transfer-label">Longueur du code</label>

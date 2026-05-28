@@ -57,7 +57,7 @@ foreach (array('bg-blue', 'bg-green', 'bg-yellow', 'bg-red') as $colorClass) {
     }
 }
 
-foreach (array('Aujourd\'hui', 'Ce mois', 'Stock total', 'Commissions') as $label) {
+foreach (array('Aujourd\'hui', '$overviewReportPeriodLabel', 'Stock total', 'Commissions') as $label) {
     if (strpos($summary, $label) === false) {
         fwrite(STDERR, "manager overview summary label missing: " . $label . "\n");
         exit(1);
@@ -72,7 +72,7 @@ foreach (array('bg-blue', 'bg-green', 'bg-yellow', 'bg-red') as $colorClass) {
     }
 }
 
-foreach (array('data-label="<?= isset($_seller) ? $_seller : \'Vendeur\' ?>"', 'data-label="CA mois"', 'data-label="Stock"', 'manager-overview-cell-value') as $mobileNeedle) {
+foreach (array('data-label="<?= isset($_seller) ? $_seller : \'Vendeur\' ?>"', 'data-label="CA période"', 'data-label="Stock"', 'manager-overview-cell-value') as $mobileNeedle) {
     if (strpos($profile, $mobileNeedle) === false) {
         fwrite(STDERR, "manager overview mobile table markup missing: " . $mobileNeedle . "\n");
         exit(1);
