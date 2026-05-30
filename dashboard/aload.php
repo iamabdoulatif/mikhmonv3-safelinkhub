@@ -63,7 +63,7 @@ include_once('../include/mikhmon_compat.php');
     $routerboard = $getrouterboard[0];
     ?>
     
-    <div id="r_1" class="row">
+    <div id="r_1" class="row dashboard-top-row">
       <div class="col-4">
         <div class="box bmh-75 box-bordered">
           <div class="box-group">

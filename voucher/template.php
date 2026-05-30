@@ -2,7 +2,7 @@
 // Traitement du prix (identique à l'original)
 $priceClean = preg_replace('/[^0-9]/', '', $price);
 $priceRaw = intval($priceClean);
-$priceValue = intval($priceRaw / 100);
+$priceValue = intval($priceRaw);
 
 // Choix de la classe de couleur (couleurs vives, sans dégradé)
 $colorClass = "bg-default";

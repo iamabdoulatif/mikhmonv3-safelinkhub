@@ -194,6 +194,45 @@ img {
   }
 }
 
+/* Dashboard summary cards read as icon + content rows on phones. */
+@media screen and (max-width: 749px) {
+  .dashboard-top-row .box-group,
+  #r_4 .box-group {
+    flex-wrap: nowrap;
+    align-items: flex-start;
+    width: 100%;
+  }
+
+  .dashboard-top-row .box-group-icon,
+  #r_4 .box-group-icon {
+    flex: 0 0 48px;
+    width: 48px;
+    min-width: 48px;
+    margin: 0 10px 0 0;
+    padding: 4px 0;
+    text-align: left;
+  }
+
+  .dashboard-top-row .box-group-area,
+  #r_4 .box-group-area {
+    display: block;
+    flex: 1 1 auto;
+    min-width: 0;
+    width: auto;
+    padding: 0;
+    line-height: 1.45;
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+
+  .dashboard-top-row .box-group-area > span,
+  #r_4 .box-group-area > span,
+  #r_4 #reloadLreport {
+    display: block;
+    width: 100%;
+  }
+}
+
 /* ── 13. TSCROLL – MAX HEIGHT ADJUSTMENT ON MOBILE ──────────────── */
 /* Theme uses height:70vh for .tscroll tbody which is fine on        */
 /* desktop but leaves little room on small phones after the navbar.  */
