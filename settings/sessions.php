@@ -86,7 +86,7 @@ if (!isset($_SESSION["mikhmon"])) {
                 } else { ?>
                     <div class="col-12">
                         <div class="box bmh-75 box-bordered <?= $color[rand(1, 11)]; ?>">
-                                <div class="box-group">
+                                <div class="box-group router-session-box">
                                   
                                   <div class="box-group-icon">
                                     <span class="connect pointer" id="<?= $value; ?>">

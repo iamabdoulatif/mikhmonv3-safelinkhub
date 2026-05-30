@@ -233,6 +233,40 @@ img {
   }
 }
 
+/* Router session cards use the same readable icon + content layout. */
+@media screen and (max-width: 749px) {
+  .router-session-box {
+    flex-wrap: nowrap;
+    align-items: flex-start;
+    width: 100%;
+  }
+
+  .router-session-box .box-group-icon {
+    flex: 0 0 48px;
+    width: 48px;
+    min-width: 48px;
+    margin: 0 10px 0 0;
+    padding: 4px 0;
+    text-align: left;
+  }
+
+  .router-session-box .box-group-area {
+    display: block;
+    flex: 1 1 auto;
+    min-width: 0;
+    width: auto;
+    padding: 0;
+    line-height: 1.45;
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+
+  .router-session-box .box-group-area > span {
+    display: block;
+    width: 100%;
+  }
+}
+
 /* ── 13. TSCROLL – MAX HEIGHT ADJUSTMENT ON MOBILE ──────────────── */
 /* Theme uses height:70vh for .tscroll tbody which is fine on        */
 /* desktop but leaves little room on small phones after the navbar.  */
