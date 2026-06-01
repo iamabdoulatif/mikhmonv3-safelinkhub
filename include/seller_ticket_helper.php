@@ -151,3 +151,75 @@ if (!function_exists('mikhmon_collect_profiles_from_users')) {
         return array_values($profiles);
     }
 }
+
+if (!function_exists('mikhmon_seller_profile_metrics')) {
+    function mikhmon_seller_profile_metrics($sales, $availableBySeller, $sellersData) {
+        $metrics = array();
+
+        if (is_array($availableBySeller)) {
+            foreach ($availableBySeller as $sellerKey => $profiles) {
+                if (!isset($metrics[$sellerKey])) {
+                    $metrics[$sellerKey] = array();
+                }
+                if (!is_array($profiles)) {
+                    continue;
+                }
+
+                foreach ($profiles as $profile => $quantity) {
+                    $profile = trim((string)$profile);
+                    if ($profile === '') {
+                        continue;
+                    }
+
+                    $available = max(0, (int)$quantity);
+                    $metrics[$sellerKey][$profile] = array(
+                        'sold' => 0,
+                        'available' => $available,
+                        'total' => $available,
+                    );
+                }
+            }
+        }
+
+        $saleRows = function_exists('mikhmon_unique_sale_scripts')
+            ? mikhmon_unique_sale_scripts($sales)
+            : (is_array($sales) ? $sales : array());
+
+        foreach ($saleRows as $sale) {
+            if (!is_array($sale)) {
+                continue;
+            }
+
+            $row = isset($sale['profile']) && isset($sale['comment'])
+                ? $sale
+                : (function_exists('mikhmon_parse_sale_script') ? mikhmon_parse_sale_script($sale) : array());
+            $profile = isset($row['profile']) ? trim((string)$row['profile']) : '';
+            $comment = isset($row['comment']) ? $row['comment'] : '';
+            $sellerKey = mikhmon_comment_seller_key($comment, $sellersData);
+
+            if ($sellerKey === '' || $profile === '') {
+                continue;
+            }
+            if (!isset($metrics[$sellerKey])) {
+                $metrics[$sellerKey] = array();
+            }
+            if (!isset($metrics[$sellerKey][$profile])) {
+                $metrics[$sellerKey][$profile] = array(
+                    'sold' => 0,
+                    'available' => 0,
+                    'total' => 0,
+                );
+            }
+
+            $metrics[$sellerKey][$profile]['sold']++;
+            $metrics[$sellerKey][$profile]['total']++;
+        }
+
+        foreach ($metrics as &$profiles) {
+            uksort($profiles, 'strnatcasecmp');
+        }
+        unset($profiles);
+
+        return $metrics;
+    }
+}

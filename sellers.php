@@ -384,6 +384,7 @@ if ($seller_logged_in && isset($API)) {
             $allSellersStock[$sk] = [
                 'name'    => isset($sd['name']) ? $sd['name'] : $sk,
                 'stock'   => [],
+                'profiles' => [],
                 'is_self' => ($sk === $sellerUsername),
             ];
         }
@@ -406,6 +407,20 @@ if ($seller_logged_in && isset($API)) {
             }
         }
     }
+
+    $availableStockBySeller = [];
+    foreach ($allSellersStock as $sk => $sdata) {
+        $availableStockBySeller[$sk] = $sdata['stock'];
+    }
+    $sellerProfileMetrics = mikhmon_seller_profile_metrics(
+        isset($getSales) ? $getSales : [],
+        $availableStockBySeller,
+        $sellers_data
+    );
+    foreach ($allSellersStock as $sk => &$sdata) {
+        $sdata['profiles'] = isset($sellerProfileMetrics[$sk]) ? $sellerProfileMetrics[$sk] : [];
+    }
+    unset($sdata);
 }
 
 // ── Demandes en attente pour le vendeur connecté (notifications) ─────────────
@@ -993,13 +1008,22 @@ if ($accept_error): echo '<div class="alert-danger"><i class="fa fa-ban"></i> ' 
     </span>
   </div>
   <div class="stock-board-card-body">
-    <?php if (empty($sdata['stock'])): ?>
+    <?php if (empty($sdata['profiles'])): ?>
       <div class="stock-empty-note"><i class="fa fa-inbox"></i> <?= isset($_stock_no_ticket) ? $_stock_no_ticket : 'No tickets available' ?></div>
     <?php else: ?>
-      <?php foreach ($sdata['stock'] as $prof => $qty): ?>
+      <?php foreach ($sdata['profiles'] as $prof => $profileMetrics): ?>
+      <?php $qty = isset($profileMetrics['available']) ? (int)$profileMetrics['available'] : 0; ?>
+      <?php $sold = isset($profileMetrics['sold']) ? (int)$profileMetrics['sold'] : 0; ?>
+      <?php $attributed = isset($profileMetrics['total']) ? (int)$profileMetrics['total'] : $qty; ?>
       <div class="stock-profile-row">
         <span class="stock-profile-name"><?= htmlspecialchars($prof) ?></span>
-        <span class="stock-profile-qty <?= $qty <= 5 ? 'qty-low' : 'qty-ok' ?>"><?= (int)$qty ?></span>
+        <span class="stock-profile-qty <?= $qty <= 5 ? 'qty-low' : 'qty-ok' ?>"
+              title="Vendus / total attribué">
+          <span class="stock-profile-sold"><?= $sold ?></span>
+          <span class="stock-profile-separator">/</span>
+          <span class="stock-profile-total"><?= $attributed ?></span>
+        </span>
+        <?php if ($qty > 0): ?>
         <?php if ($sdata['is_self']): ?>
         <a class="stock-request-btn stock-transfer-link" href="./sellers.php?action=transfer">
           <i class="fa fa-exchange"></i> <?= isset($_transfer_submit) ? $_transfer_submit : 'Transfer' ?>
@@ -1009,6 +1033,7 @@ if ($accept_error): echo '<div class="alert-danger"><i class="fa fa-ban"></i> ' 
                 onclick="openReqModal('<?= htmlspecialchars($sk, ENT_QUOTES) ?>','<?= htmlspecialchars($sdata['name'], ENT_QUOTES) ?>','<?= htmlspecialchars($prof, ENT_QUOTES) ?>',<?= (int)$qty ?>);return false;">
           <i class="fa fa-arrow-circle-left"></i> <?= isset($_transfer_req_send) ? $_transfer_req_send : 'Demander' ?>
         </button>
+        <?php endif; ?>
         <?php endif; ?>
       </div>
       <?php endforeach; ?>

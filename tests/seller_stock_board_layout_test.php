@@ -22,6 +22,8 @@ foreach (array(
     'stock board grid wrapper' => 'stock-board-grid',
     'stock board card' => 'stock-board-card',
     'stock profile row' => 'stock-profile-row',
+    'stock profile sold value' => 'stock-profile-sold',
+    'stock profile attributed total' => 'stock-profile-total',
     'stock request button' => 'stock-request-btn',
     'stock request all button' => 'stock-request-all-btn',
 ) as $label => $needle) {

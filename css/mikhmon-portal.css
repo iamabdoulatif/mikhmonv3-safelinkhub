@@ -729,8 +729,12 @@
   overflow-wrap: anywhere;
 }
 .stock-profile-qty {
+  align-items: baseline;
+  display: inline-flex;
   font-size: 14px;
   font-weight: bold;
+  gap: 3px;
+  justify-content: flex-end;
   line-height: 1;
   min-width: 30px;
   text-align: right;
@@ -738,6 +742,10 @@
 }
 .stock-profile-qty.qty-low { color: #ff7776; }
 .stock-profile-qty.qty-ok  { color: #59ca80; }
+.stock-profile-separator,
+.stock-profile-total {
+  color: rgba(248,250,252,.78);
+}
 .stock-request-btn {
   align-items: center;
   background: #51a9d5;
