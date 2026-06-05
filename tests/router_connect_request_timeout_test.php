@@ -25,7 +25,8 @@ $expectations = array(
         => strpos($manager, '$managerShouldLoadRouterData = ($action !== \'dashboard\');') !== false
             && strpos($manager, '&& $managerShouldLoadRouterData') !== false,
     'Le dashboard vendeur ne doit pas ouvrir RouterOS au chargement.'
-        => strpos($sellers, '$sellerShouldLoadRouterData = ($action !== \'dashboard\');') !== false
+        => strpos($sellers, "\$action = isset(\$_GET['action']) && \$_GET['action'] !== '' ? \$_GET['action'] : 'dashboard';") !== false
+            && strpos($sellers, '$sellerShouldLoadRouterData = ($action !== \'dashboard\');') !== false
             && strpos($sellers, '&& $sellerShouldLoadRouterData') !== false,
 );
 

@@ -172,7 +172,8 @@ include('../lang/'.$langid.'.php');
     <h3><i class="fa fa-users"></i> <?= $_seller_sales ?></h3>
   </div>
   <div class="card-body" style="padding:8px;">
-    <table class="table table-sm table-bordered table-hover" style="font-size:13px;margin-bottom:0;">
+    <div class="overflow" style="-webkit-overflow-scrolling:touch;">
+    <table class="table table-sm table-bordered table-hover" style="font-size:13px;margin-bottom:0;min-width:560px;">
       <thead class="thead-light">
         <tr>
           <th style="width:30%"><?= $_seller ?> / <?= $_profile ?></th>
@@ -227,6 +228,7 @@ include('../lang/'.$langid.'.php');
       <?php endforeach; ?>
       </tbody>
     </table>
+    </div>
   </div>
 </div>
 <?php endif; ?>

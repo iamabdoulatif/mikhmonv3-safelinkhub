@@ -1451,3 +1451,64 @@ img {
     box-sizing: border-box;
   }
 }
+
+/* ── 25. REPORT PAGES – FILTER BAR & SEARCH INPUT ────────────────── */
+/* selling.php: search input est limité à max-width:150px inline —     */
+/* sur mobile on le laisse pleine largeur et on wrape les boutons.    */
+@media screen and (max-width: 749px) {
+  /* Search input inside report filter area */
+  #filterTable {
+    max-width: 100% !important;
+    width: 100% !important;
+    float: none !important;
+    margin-top: 0 !important;
+    margin-bottom: 6px;
+    display: block;
+  }
+
+  /* Action buttons bar above the table */
+  .card-body > .row > .col-12 > div[style*="padding-bottom"] {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: flex-start;
+  }
+
+  .card-body > .row > .col-12 > div[style*="padding-bottom"] .btn,
+  .card-body > .row > .col-12 > div[style*="padding-bottom"] button {
+    flex: 1 1 auto;
+    min-width: 80px;
+    margin: 0;
+  }
+}
+
+/* ── 26. REPORT LIVEREPORT – TABLE OVERFLOW ──────────────────────── */
+/* The overflow wrapper was added in PHP; ensure max-height is sane.  */
+@media screen and (max-width: 749px) {
+  .card-body > .overflow {
+    max-height: 60vh;
+  }
+}
+
+/* ── 27. SETTINGS PAGE – ROUTER BUTTON BAR ───────────────────────── */
+/* Settings router connection buttons (Connect/Ping/Test) side-by-side */
+/* can overflow on very small phones — make them wrap gracefully.      */
+@media screen and (max-width: 480px) {
+  .settings .card-body .btn {
+    margin: 3px 2px;
+  }
+}
+
+/* ── 28. GLOBAL – PREVENT HORIZONTAL SCROLL ON BODY ─────────────── */
+/* Catch-all for any remaining overflow sources at the page level.    */
+body {
+  overflow-x: hidden;
+}
+
+/* ── 29. HOTSPOT ACTIVE / HOSTS / DHCP – SCROLL CONTAINER ─────────── */
+/* These pages use .overflow.card-body which caps height correctly but */
+/* may not always enforce -webkit-overflow-scrolling on iOS.           */
+.card-body.overflow,
+.overflow.box-bordered {
+  -webkit-overflow-scrolling: touch;
+}
