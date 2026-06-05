@@ -82,6 +82,8 @@ $seller_session_missing = false;
 $seller_session_message = '';
 $seller_router_connected = false;
 $seller_connection_error = '';
+$sellerShouldLoadRouterData = ($action !== 'dashboard');
+date_default_timezone_set('UTC');
 
 if ($seller_logged_in) {
     $sellerUsername      = $_SESSION['seller_username'];
@@ -98,14 +100,14 @@ if ($seller_logged_in) {
     }
 
     // Configurer le fuseau horaire
-    if (!$seller_session_missing) {
+    if (!$seller_session_missing && $sellerShouldLoadRouterData) {
         $API = new RouterosAPI();
         $API->debug = false;
         $API->timeout = 2;
         $API->attempts = 1;
         $API->delay = 0;
     }
-    if (!$seller_session_missing) {
+    if (!$seller_session_missing && $sellerShouldLoadRouterData) {
         $seller_router_connected = $API->connect($iphost, $userhost, decrypt($passwdhost));
         if (!$seller_router_connected) {
             $seller_connection_error = 'Connexion impossible au routeur "' . $seller_session_name . '" (' . $iphost . ':8728). Vérifiez l’IP, le service API MikroTik et les identifiants.';

@@ -2,6 +2,8 @@
 
 $admin = file_get_contents(__DIR__ . '/../admin.php');
 $menu = file_get_contents(__DIR__ . '/../include/menu.php');
+$manager = file_get_contents(__DIR__ . '/../manager.php');
+$sellers = file_get_contents(__DIR__ . '/../sellers.php');
 
 $expectations = array(
     'La route de connexion doit liberer le verrou de session avant l appel reseau.'
@@ -19,6 +21,12 @@ $expectations = array(
     'Le contexte settings doit rester un parametre distinct du nom de session.'
         => strpos($menu, 'split("&c=")') !== false
             && strpos($menu, 'connectUrl += "&c="') !== false,
+    'Le dashboard gerant ne doit pas ouvrir RouterOS au chargement.'
+        => strpos($manager, '$managerShouldLoadRouterData = ($action !== \'dashboard\');') !== false
+            && strpos($manager, '&& $managerShouldLoadRouterData') !== false,
+    'Le dashboard vendeur ne doit pas ouvrir RouterOS au chargement.'
+        => strpos($sellers, '$sellerShouldLoadRouterData = ($action !== \'dashboard\');') !== false
+            && strpos($sellers, '&& $sellerShouldLoadRouterData') !== false,
 );
 
 foreach ($expectations as $message => $passed) {
