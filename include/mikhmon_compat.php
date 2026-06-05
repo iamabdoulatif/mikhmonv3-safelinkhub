@@ -1316,6 +1316,6 @@ if (!function_exists('mikhmon_month_map')) {
   function mikhmon_revenue_toggle_button($visible)
   {
     $label = $visible ? 'Masquer les revenus' : 'Afficher les revenus';
-    return '<a class="btn bg-secondary" style="margin-left:8px;" href="' . mikhmon_revenue_toggle_url($visible) . '">' . $label . '</a>';
+    return '<a class="portal-nav-action portal-nav-revenue" href="' . mikhmon_revenue_toggle_url($visible) . '"><i class="fa fa-eye"></i><span>' . $label . '</span></a>';
   }
 }

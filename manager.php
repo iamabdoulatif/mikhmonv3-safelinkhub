@@ -1026,10 +1026,10 @@ if ($manager_logged_in && $action === 'accounting' && isset($_POST['send_account
       <?= ($action === 'dashboard') ? 'Accueil gérant' : ((isset($_manager_portal) ? $_manager_portal : 'Manager') . ' — ' . htmlspecialchars($managerName)) ?>
     </a>
   </div>
-  <div class="navbar-right">
+  <div class="navbar-right portal-nav-actions">
     <?= mikhmon_revenue_toggle_button($managerRevenueVisible) ?>
-    <a href="<?= $managerHomeUrl ?>"><i class="fa fa-home mr-1"></i> Accueil gérant</a>
-    <a href="./manager.php?action=logout"><i class="fa fa-sign-out mr-1"></i> <?= isset($_logout) ? $_logout : 'Logout' ?></a>
+    <a class="portal-nav-action" href="<?= $managerHomeUrl ?>"><i class="fa fa-home"></i><span>Tableau de bord</span></a>
+    <a class="portal-nav-action" href="./manager.php?action=logout"><i class="fa fa-sign-out"></i><span><?= isset($_logout) ? $_logout : 'Logout' ?></span></a>
   </div>
 </div>
 

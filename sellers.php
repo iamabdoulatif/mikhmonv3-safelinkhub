@@ -807,10 +807,10 @@ if ($seller_logged_in && $action === 'generate') {
       <i class="fa fa-<?= $navIcon ?>"></i> <?= $navLabel ?> — <?= htmlspecialchars($sellerName) ?>
     </a>
   </div>
-  <div class="navbar-right">
+  <div class="navbar-right portal-nav-actions">
     <?= mikhmon_revenue_toggle_button($sellerRevenueVisible) ?>
-    <a href="<?= $sellerDashboardUrl ?>"><i class="fa fa-dashboard mr-1"></i> <?= $_dashboard ?></a>
-    <a href="./sellers.php?action=logout"><i class="fa fa-sign-out mr-1"></i> <?= $_logout ?></a>
+    <a class="portal-nav-action" href="<?= $sellerDashboardUrl ?>"><i class="fa fa-dashboard"></i><span><?= $_dashboard ?></span></a>
+    <a class="portal-nav-action" href="./sellers.php?action=logout"><i class="fa fa-sign-out"></i><span><?= $_logout ?></span></a>
   </div>
 </div>
 
