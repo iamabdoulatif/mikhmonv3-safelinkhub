@@ -980,6 +980,22 @@ if (isset($_POST['admin_send_accounting_notice'])) {
     }
 }
 @media (max-width: 600px) {
+    .manage-sellers-card-header {
+      align-items:stretch !important;
+    }
+    .manage-sellers-card-header h3,
+    .manage-sellers-dashboard-btn {
+      width:100%;
+      box-sizing:border-box;
+    }
+    .manage-sellers-dashboard-btn {
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      min-height:44px;
+      margin:0;
+      white-space:normal;
+    }
     .hotspot-assign-card .admin-transfer-grid,
     .admin-transfer-grid { grid-template-columns: 1fr; }
     .hotspot-assign-card .btn {
@@ -1076,9 +1092,9 @@ if (isset($_POST['admin_send_accounting_notice'])) {
 <div class="row portal-admin-shell">
 <div class="col-12">
 <div class="card">
-<div class="card-header" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+<div class="card-header manage-sellers-card-header" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
   <h3 style="margin:0;"><i class="fa fa-users"></i> <?= $_manage_sellers ?></h3>
-  <a href="<?= $adminDashboardUrl ?>" class="btn bg-primary">
+  <a href="<?= $adminDashboardUrl ?>" class="btn bg-primary manage-sellers-dashboard-btn">
     <i class="fa fa-dashboard"></i> <?= $_dashboard ?>
   </a>
 </div>

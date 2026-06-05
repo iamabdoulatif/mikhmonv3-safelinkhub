@@ -53,4 +53,16 @@ foreach (array(
     }
 }
 
+foreach (array(
+    'manage-sellers-card-header',
+    'manage-sellers-dashboard-btn',
+    '.manage-sellers-dashboard-btn',
+    'min-height:44px',
+) as $responsiveHook) {
+    if (strpos($manage, $responsiveHook) === false) {
+        fwrite(STDERR, "manage sellers dashboard mobile hook missing: " . $responsiveHook . "\n");
+        exit(1);
+    }
+}
+
 echo "admin_registered_sellers_responsive_test passed\n";
