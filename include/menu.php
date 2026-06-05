@@ -261,6 +261,25 @@ if($idleto != "disable"){
 
 <script>
 $(document).ready(function(){
+  window.connect = function(sessionName) {
+    var connectParts = String(sessionName).split("&c=");
+    var connectUrl = "./admin.php?id=connect&session=" + encodeURIComponent(connectParts[0]);
+    if (connectParts[1]) {
+      connectUrl += "&c=" + encodeURIComponent(connectParts[1]);
+    }
+    $.ajax({
+      url: connectUrl,
+      timeout: 12000
+    }).done(function(response) {
+      $("#temp").html(response);
+    }).fail(function() {
+      $("#notify .message").text("Connexion impossible ou délai dépassé.");
+      setTimeout(function() {
+        $("#notify").hide();
+      }, 4000);
+    });
+  };
+
   $(".connect").click(function(){
     notify("<?= $_connecting ?>");
     connect(this.id)

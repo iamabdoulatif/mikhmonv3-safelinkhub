@@ -51,7 +51,12 @@ if (!isset($_SESSION["mikhmon"])) {
 
 	    $siphost = (preg_replace('/\s+/', '', $_POST['ipmik']));
     $suserhost = ($_POST['usermik']);
-    $spasswdhost = encrypt($_POST['passmik']);
+    $postedPassmik = isset($_POST['passmik']) ? trim((string) $_POST['passmik']) : '';
+    if ($postedPassmik === '' && !empty($passwdhost)) {
+      $spasswdhost = $passwdhost;
+    } else {
+      $spasswdhost = function_exists('mikhmon_legacy_encrypt') ? mikhmon_legacy_encrypt($postedPassmik) : encrypt($postedPassmik);
+    }
     $shotspotname = str_replace("'","",$_POST['hotspotname']);
     $sdnsname = ($_POST['dnsname']);
     $scurrency = ($_POST['currency']);

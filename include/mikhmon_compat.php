@@ -504,6 +504,40 @@ if (!function_exists('mikhmon_month_map')) {
     return '';
   }
 
+  function mikhmon_accounting_historical_sellers($sales, $session, $sellersData = array())
+  {
+    $historical = array();
+    $session = preg_replace('/[^a-zA-Z0-9_.-]/', '', (string) $session);
+
+    foreach (mikhmon_unique_sale_scripts($sales) as $script) {
+      $sale = (isset($script['date']) && isset($script['comment'])) ? $script : mikhmon_parse_sale_script($script);
+      $comment = trim(isset($sale['comment']) ? (string) $sale['comment'] : '');
+      if ($comment === '') {
+        continue;
+      }
+
+      $candidate = $comment;
+      $separator = strrpos($comment, '-');
+      if ($separator !== false) {
+        $candidate = substr($comment, $separator + 1);
+      }
+      $candidate = preg_replace('/[^a-zA-Z0-9_]/', '', trim($candidate));
+      if ($candidate === '' || isset($sellersData[$candidate]) || isset($historical[$candidate])) {
+        continue;
+      }
+
+      $historical[$candidate] = array(
+        'password' => '',
+        'name' => ucfirst(strtolower($candidate)) . ' (historique)',
+        'session' => $session,
+        'commission' => 10,
+        'historical' => true,
+      );
+    }
+
+    return $historical;
+  }
+
   function mikhmon_accounting_add_amount(&$bucket, $amount, $commission)
   {
     $amount = (float) $amount;
@@ -651,6 +685,33 @@ if (!function_exists('mikhmon_month_map')) {
     return '$' . $varName . '[' . mikhmon_php_literal($key) . '] = ' . mikhmon_php_literal($value) . ';' . "\n";
   }
 
+  function mikhmon_account_password_is_hash($storedPassword)
+  {
+    $info = password_get_info((string) $storedPassword);
+    return isset($info['algo']) && (int) $info['algo'] !== 0;
+  }
+
+  function mikhmon_account_password_matches($plainPassword, $storedPassword)
+  {
+    $storedPassword = (string) $storedPassword;
+    if (mikhmon_account_password_is_hash($storedPassword)) {
+      return password_verify((string) $plainPassword, $storedPassword);
+    }
+
+    $decoded = function_exists('decrypt') ? decrypt($storedPassword) : $storedPassword;
+    return hash_equals((string) $decoded, (string) $plainPassword);
+  }
+
+  function mikhmon_account_password_storage($password)
+  {
+    $password = (string) $password;
+    if (mikhmon_account_password_is_hash($password)) {
+      return $password;
+    }
+
+    return function_exists('encrypt') ? encrypt($password) : $password;
+  }
+
   function mikhmon_assignment_line_matches($line, $varName, $key)
   {
     $varName = trim((string) $varName);
@@ -778,12 +839,18 @@ if (!function_exists('mikhmon_month_map')) {
 
   function mikhmon_fetch_sales_by_month($API, $monthKey)
   {
-    $data = $API->comm('/system/script/print', array('?owner' => strtolower(trim((string) $monthKey))));
-    if (!is_array($data)) {
-      return array();
+    $monthKey = strtolower(trim((string) $monthKey));
+    $rows = array();
+    $owners = array_merge(array($monthKey), mikhmon_legacy_ros7_owner_keys($monthKey));
+
+    foreach (array_values(array_unique($owners)) as $owner) {
+      $data = $API->comm('/system/script/print', array('?owner' => $owner));
+      if (is_array($data)) {
+        $rows = array_merge($rows, $data);
+      }
     }
 
-    return mikhmon_filter_sale_scripts(mikhmon_unique_sale_scripts($data), '', $monthKey);
+    return mikhmon_filter_sale_scripts(mikhmon_unique_sale_scripts($rows), '', $monthKey);
   }
 
   function mikhmon_income_summary_from_scripts($scripts, $dayKey, $monthKey)
@@ -816,6 +883,73 @@ if (!function_exists('mikhmon_month_map')) {
     return $summary;
   }
 
+  function mikhmon_income_counter_file_value($API, $name)
+  {
+    $rows = $API->comm('/file/print', array(
+      '?name' => $name,
+      '.proplist' => 'name,contents',
+    ));
+    if (!is_array($rows) || empty($rows[0]['contents'])) {
+      return 0.0;
+    }
+
+    return mikhmon_parse_money_amount($rows[0]['contents']);
+  }
+
+  function mikhmon_income_summary_from_counter_files($API, $dayKey)
+  {
+    $dayKey = mikhmon_normalize_sale_date($dayKey);
+    $monthKey = mikhmon_sale_month_key($dayKey);
+    $dayNumber = mikhmon_sale_day_number($dayKey);
+    $dayPrefix = 'mikhmon-income-day-' . $monthKey . '-' . sprintf('%02d', $dayNumber);
+    $monthPrefix = 'mikhmon-income-month-' . $monthKey;
+
+    return array(
+      'today_count' => (int) mikhmon_income_counter_file_value($API, $dayPrefix . '-count.txt'),
+      'today_total' => (float) mikhmon_income_counter_file_value($API, $dayPrefix . '-total.txt'),
+      'month_count' => (int) mikhmon_income_counter_file_value($API, $monthPrefix . '-count.txt'),
+      'month_total' => (float) mikhmon_income_counter_file_value($API, $monthPrefix . '-total.txt'),
+    );
+  }
+
+  function mikhmon_income_counter_scheduler_source()
+  {
+    return mikhmon_ros_date_compat_block()
+      . ':local gt 0;:local gc 0;:local mt 0;:local mc 0;:local dt 0;:local dc 0;'
+      . ':foreach i in=[/system script find where comment=mikhmon] do={'
+      . ':local n [/system script get $i name];:local o [/system script get $i owner];:local s [/system script get $i source];'
+      . ':local a [:find $n "-|-"];:local b [:find $n "-|-" ($a+3)];:local c [:find $n "-|-" ($b+3)];:local e [:find $n "-|-" ($c+3)];'
+      . ':local p [:tonum [:pick $n ($c+3) $e]];'
+      . ':set gt ($gt+$p);:set gc ($gc+1);'
+      . ':if ($o=($month.$year)) do={:set mt ($mt+$p);:set mc ($mc+1)};'
+      . ':if ($s=$dateKey) do={:set dt ($dt+$p);:set dc ($dc+1)};'
+      . '};'
+      . ':local gp "mikhmon-income-global";:local mp ("mikhmon-income-month-".$month.$year);:local dp ("mikhmon-income-day-".$month.$year."-".$day);'
+      . ':foreach pair in={($gp."-total.txt=".$gt);($gp."-count.txt=".$gc);($mp."-total.txt=".$mt);($mp."-count.txt=".$mc);($dp."-total.txt=".$dt);($dp."-count.txt=".$dc)} do={'
+      . ':local x [:find $pair "="];:local f [:pick $pair 0 $x];:local v [:pick $pair ($x+1) [:len $pair]];:local id [/file find where name=$f];'
+      . ':if ([:len $id]=0) do={/file add name=$f contents=$v} else={/file set $id contents=$v};'
+      . '};';
+  }
+
+  function mikhmon_ensure_income_counter_scheduler($API)
+  {
+    $name = 'mikhmon-income-cache';
+    $rows = $API->comm('/system/scheduler/print', array('?name' => $name, '.proplist' => '.id,name'));
+    if (is_array($rows) && !empty($rows)) {
+      return true;
+    }
+
+    $result = $API->comm('/system/scheduler/add', array(
+      'name' => $name,
+      'interval' => '1d',
+      'start-time' => '03:00:00',
+      'comment' => 'mikhmon-income-cache',
+      'on-event' => mikhmon_income_counter_scheduler_source(),
+      'disabled' => 'no',
+    ));
+    return is_array($result);
+  }
+
   function mikhmon_unique_sale_scripts($scripts)
   {
     $out = array();
@@ -844,12 +978,14 @@ if (!function_exists('mikhmon_month_map')) {
     return ':local date [ /system clock get date ];'
       . ':local year [ :pick $date 7 11 ];'
       . ':local month [ :pick $date 0 3 ];'
+      . ':local day [ :pick $date 4 6 ];'
       . ':local dateKey $date;'
       . ':if ([:find $date "-"] != nil) do={'
       . ':local yyyy [:pick $date 0 4];'
       . ':local mm [:pick $date 5 7];'
       . ':local dd [:pick $date 8 10];'
       . ':set year $yyyy;'
+      . ':set day $dd;'
       . ':if ($mm = "01") do={ :set month "jan";};'
       . ':if ($mm = "02") do={ :set month "feb";};'
       . ':if ($mm = "03") do={ :set month "mar";};'
@@ -1129,5 +1265,57 @@ if (!function_exists('mikhmon_month_map')) {
       return (int)($result[0]['ret'] ?? 0);
     }
     return (int)$result;
+  }
+
+  function mikhmon_revenue_visibility_key($role)
+  {
+    $role = preg_replace('/[^a-z0-9_]/i', '', (string) $role);
+    return 'mikhmon_' . strtolower($role) . '_revenue_visible';
+  }
+
+  function mikhmon_revenue_handle_toggle($role)
+  {
+    if (!isset($_GET['revenue'])) {
+      return;
+    }
+    $value = strtolower((string) $_GET['revenue']);
+    if ($value !== 'show' && $value !== 'hide') {
+      return;
+    }
+    $_SESSION[mikhmon_revenue_visibility_key($role)] = ($value === 'show');
+    $params = $_GET;
+    unset($params['revenue']);
+    $path = strtok($_SERVER['REQUEST_URI'], '?');
+    $query = http_build_query($params);
+    header('Location: ' . $path . ($query !== '' ? '?' . $query : ''));
+    exit;
+  }
+
+  function mikhmon_revenue_is_visible($role)
+  {
+    $key = mikhmon_revenue_visibility_key($role);
+    return !isset($_SESSION[$key]) || (bool) $_SESSION[$key];
+  }
+
+  function mikhmon_revenue_money($visible, $amount, $currency, $cekindo)
+  {
+    if (!$visible) {
+      return '----';
+    }
+    return mikhmon_format_money_amount($amount, $currency, $cekindo);
+  }
+
+  function mikhmon_revenue_toggle_url($visible)
+  {
+    $params = $_GET;
+    $params['revenue'] = $visible ? 'hide' : 'show';
+    $path = strtok($_SERVER['REQUEST_URI'], '?');
+    return htmlspecialchars($path . '?' . http_build_query($params));
+  }
+
+  function mikhmon_revenue_toggle_button($visible)
+  {
+    $label = $visible ? 'Masquer les revenus' : 'Afficher les revenus';
+    return '<a class="btn bg-secondary" style="margin-left:8px;" href="' . mikhmon_revenue_toggle_url($visible) . '">' . $label . '</a>';
   }
 }

@@ -22,8 +22,8 @@ class RouterosAPI
     var $port      = 8728;  //  Port to connect to (default 8729 for ssl)
     var $ssl       = false; //  Connect using SSL (must enable api-ssl in IP/Services)
     var $timeout   = 3;     //  Connection attempt timeout and data read timeout
-    var $attempts  = 5;     //  Connection attempt count
-    var $delay     = 3;     //  Delay between connection attempts in seconds
+    var $attempts  = 2;     //  Connection attempt count
+    var $delay     = 1;     //  Delay between connection attempts in seconds
 
     var $socket;            //  Variable for storing socket resource
     var $error_no;          //  Variable for storing connection error number, if any
@@ -102,6 +102,7 @@ class RouterosAPI
             $this->socket = @stream_socket_client($PROTOCOL . $ip.':'. $this->port, $this->error_no, $this->error_str, $this->timeout, STREAM_CLIENT_CONNECT,$context);
             if ($this->socket) {
                 socket_set_timeout($this->socket, $this->timeout);
+                stream_set_blocking($this->socket, false);
                 $this->write('/login', false);
                 $this->write('=name=' . $login, false);
                 $this->write('=password=' . $password);
@@ -289,7 +290,11 @@ class RouterosAPI
         while (true) {
             // Read the first byte of input which gives us some or all of the length
             // of the remaining reply.
-            $BYTE   = ord(fread($this->socket, 1));
+            $lengthByte = $this->readBytes(1);
+            if ($lengthByte === false) {
+                break;
+            }
+            $BYTE   = ord($lengthByte);
             $LENGTH = 0;
             // If the first bit is set then we need to remove the first four bits, shift left 8
             // and then read another byte in.
@@ -298,21 +303,37 @@ class RouterosAPI
             // and then read in yet another byte.
             if ($BYTE & 128) {
                 if (($BYTE & 192) == 128) {
-                    $LENGTH = (($BYTE & 63) << 8) + ord(fread($this->socket, 1));
+                    $lengthBytes = $this->readBytes(1);
+                    if ($lengthBytes === false) {
+                        break;
+                    }
+                    $LENGTH = (($BYTE & 63) << 8) + ord($lengthBytes);
                 } else {
                     if (($BYTE & 224) == 192) {
-                        $LENGTH = (($BYTE & 31) << 8) + ord(fread($this->socket, 1));
-                        $LENGTH = ($LENGTH << 8) + ord(fread($this->socket, 1));
+                        $lengthBytes = $this->readBytes(2);
+                        if ($lengthBytes === false) {
+                            break;
+                        }
+                        $LENGTH = (($BYTE & 31) << 8) + ord($lengthBytes[0]);
+                        $LENGTH = ($LENGTH << 8) + ord($lengthBytes[1]);
                     } else {
                         if (($BYTE & 240) == 224) {
-                            $LENGTH = (($BYTE & 15) << 8) + ord(fread($this->socket, 1));
-                            $LENGTH = ($LENGTH << 8) + ord(fread($this->socket, 1));
-                            $LENGTH = ($LENGTH << 8) + ord(fread($this->socket, 1));
+                            $lengthBytes = $this->readBytes(3);
+                            if ($lengthBytes === false) {
+                                break;
+                            }
+                            $LENGTH = (($BYTE & 15) << 8) + ord($lengthBytes[0]);
+                            $LENGTH = ($LENGTH << 8) + ord($lengthBytes[1]);
+                            $LENGTH = ($LENGTH << 8) + ord($lengthBytes[2]);
                         } else {
-                            $LENGTH = ord(fread($this->socket, 1));
-                            $LENGTH = ($LENGTH << 8) + ord(fread($this->socket, 1));
-                            $LENGTH = ($LENGTH << 8) + ord(fread($this->socket, 1));
-                            $LENGTH = ($LENGTH << 8) + ord(fread($this->socket, 1));
+                            $lengthBytes = $this->readBytes(4);
+                            if ($lengthBytes === false) {
+                                break;
+                            }
+                            $LENGTH = ord($lengthBytes[0]);
+                            $LENGTH = ($LENGTH << 8) + ord($lengthBytes[1]);
+                            $LENGTH = ($LENGTH << 8) + ord($lengthBytes[2]);
+                            $LENGTH = ($LENGTH << 8) + ord($lengthBytes[3]);
                         }
                     }
                 }
@@ -324,13 +345,11 @@ class RouterosAPI
 
             // If we have got more characters to read, read them in.
             if ($LENGTH > 0) {
-                $_      = "";
-                $retlen = 0;
-                while ($retlen < $LENGTH) {
-                    $toread = $LENGTH - $retlen;
-                    $_ .= fread($this->socket, $toread);
-                    $retlen = strlen($_);
+                $_ = $this->readBytes($LENGTH);
+                if ($_ === false) {
+                    break;
                 }
+                $retlen = strlen($_);
                 $RESPONSE[] = $_;
                 $this->debug('>>> [' . $retlen . '/' . $LENGTH . '] bytes read.');
             }
@@ -355,6 +374,36 @@ class RouterosAPI
         }
 
         return $RESPONSE;
+    }
+
+    private function readBytes($length)
+    {
+        $data = '';
+        $deadline = microtime(true) + max(1, (int) $this->timeout);
+        while (strlen($data) < $length) {
+            $remaining = $deadline - microtime(true);
+            if ($remaining <= 0) {
+                return false;
+            }
+
+            $seconds = (int) floor($remaining);
+            $microseconds = (int) (($remaining - $seconds) * 1000000);
+            $read = array($this->socket);
+            $write = null;
+            $except = null;
+            $ready = @stream_select($read, $write, $except, $seconds, $microseconds);
+            if ($ready !== 1) {
+                return false;
+            }
+
+            $chunk = fread($this->socket, $length - strlen($data));
+            if ($chunk === false || $chunk === '') {
+                return false;
+            }
+            $data .= $chunk;
+        }
+
+        return $data;
     }
 
 

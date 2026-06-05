@@ -185,7 +185,7 @@ if (!function_exists('mikhmon_hotspot_account_key')) {
     return null;
   }
 
-  function mikhmon_hotspot_assignment_comment($comment, $session, $role, $accountKey)
+  function mikhmon_hotspot_assignment_comment($comment, $session, $role, $accountKey, $authHash = '')
   {
     $comment = mikhmon_hotspot_account_label($comment);
     $session = preg_replace('/[^a-zA-Z0-9_.-]/', '', trim((string) $session));
@@ -195,6 +195,9 @@ if (!function_exists('mikhmon_hotspot_account_key')) {
 
     $baseComment = mikhmon_hotspot_assignment_base_comment($comment);
     $trace = 'MIKHMON_ACCOUNT role=' . $roleLabel . ' session=' . $session . ' account=' . $accountKey;
+    if ((int) password_get_info((string) $authHash)['algo'] !== 0) {
+      $trace .= ' auth=' . $authHash;
+    }
 
     if ($baseComment === '') {
       return $trace;
@@ -235,11 +238,17 @@ if (!function_exists('mikhmon_hotspot_account_key')) {
       return null;
     }
 
+    $authHash = '';
+    if (preg_match('/\bauth=([^\s|]+)/', $comment, $authMatches) && (int) password_get_info($authMatches[1])['algo'] !== 0) {
+      $authHash = $authMatches[1];
+    }
+
     return array(
       'role' => $role,
       'session' => $foundSession,
       'account_key' => $account,
       'base_comment' => mikhmon_hotspot_assignment_base_comment($comment),
+      'auth_hash' => $authHash,
     );
   }
 
@@ -272,7 +281,7 @@ if (!function_exists('mikhmon_hotspot_account_key')) {
     return mikhmon_hotspot_assignment_base_comment($comment);
   }
 
-  function mikhmon_hotspot_clear_account_footprints($api, $hotspotUsers, $ipBindings, $session, $role, $accountKey)
+  function mikhmon_hotspot_clear_account_footprints($api, $hotspotUsers, $ipBindings, $session, $role, $accountKey, $routerUsers = array())
   {
     if (!is_object($api)) {
       return false;
@@ -320,10 +329,28 @@ if (!function_exists('mikhmon_hotspot_account_key')) {
       }
     }
 
+    foreach ((array) $routerUsers as $routerUser) {
+      if (!is_array($routerUser) || !isset($routerUser['.id'])) {
+        continue;
+      }
+      $comment = isset($routerUser['comment']) ? $routerUser['comment'] : '';
+      $assignment = mikhmon_hotspot_assignment_from_comment($comment, $session);
+      if ($assignment === null || $assignment['role'] !== $role || $assignment['account_key'] !== $accountKey) {
+        continue;
+      }
+      $response = $api->comm("/user/set", array(
+        ".id" => $routerUser['.id'],
+        "comment" => mikhmon_hotspot_assignment_base_comment($comment)
+      ));
+      if (!mikhmon_hotspot_routeros_response_ok($response)) {
+        $ok = false;
+      }
+    }
+
     return $ok;
   }
 
-  function mikhmon_hotspot_restored_account_records($hotspotUsers, $ipBindings, $session, $sellersData = array(), $managersData = array())
+  function mikhmon_hotspot_restored_account_records($hotspotUsers, $ipBindings, $session, $sellersData = array(), $managersData = array(), $routerUsers = array())
   {
     $restored = array('sellers' => array(), 'managers' => array());
     $seen = array();
@@ -406,6 +433,32 @@ if (!function_exists('mikhmon_hotspot_account_key')) {
       $seen[$assignment['account_key']] = true;
     }
 
+    foreach ((array) $routerUsers as $routerUser) {
+      if (!is_array($routerUser)) {
+        continue;
+      }
+      $assignment = mikhmon_hotspot_assignment_from_comment(isset($routerUser['comment']) ? $routerUser['comment'] : '', $session);
+      if ($assignment === null || $assignment['auth_hash'] === '' || isset($seen[$assignment['account_key']])) {
+        continue;
+      }
+      $name = mikhmon_hotspot_account_label($assignment['base_comment']);
+      if ($name === '') {
+        $name = ucfirst(strtolower($assignment['account_key']));
+      }
+      $record = array(
+        'password' => $assignment['auth_hash'],
+        'name' => $name,
+        'session' => $session,
+      );
+      if ($assignment['role'] === 'seller') {
+        $record['commission'] = 10;
+        $restored['sellers'][$assignment['account_key']] = $record;
+      } else {
+        $restored['managers'][$assignment['account_key']] = $record;
+      }
+      $seen[$assignment['account_key']] = true;
+    }
+
     return $restored;
   }
 
@@ -426,6 +479,116 @@ if (!function_exists('mikhmon_hotspot_account_key')) {
     }
 
     return true;
+  }
+
+  function mikhmon_hotspot_provision_account($api, $mode, $session, $role, $username, $password, $displayName, $macAddress = '', $address = '')
+  {
+    $mode = strtolower(trim((string) $mode));
+    $role = mikhmon_hotspot_normalized_assignment_role($role);
+    $username = mikhmon_hotspot_account_key($username);
+    $password = trim((string) $password);
+    $displayName = mikhmon_hotspot_account_label($displayName);
+    $macAddress = strtoupper(trim((string) $macAddress));
+    $address = trim((string) $address);
+
+    if (!is_object($api) || !in_array($mode, array('hotspot_user', 'ip_binding', 'router_user'), true) || !in_array($role, array('seller', 'manager'), true)) {
+      return array('ok' => false, 'error' => 'Mode ou rôle MikroTik invalide.');
+    }
+    if ($username === '' || $password === '' || $displayName === '' || trim((string) $session) === '') {
+      return array('ok' => false, 'error' => 'Tous les champs du compte sont obligatoires.');
+    }
+
+    $comment = mikhmon_hotspot_assignment_comment($displayName, $session, $role, $username, password_hash($password, PASSWORD_DEFAULT));
+    if ($mode === 'hotspot_user') {
+      $response = $api->comm('/ip/hotspot/user/add', array(
+        'server' => 'all',
+        'name' => $username,
+        'password' => $password,
+        'profile' => 'default',
+        'comment' => $comment,
+      ));
+    } elseif ($mode === 'ip_binding') {
+      if (!preg_match('/^[0-9A-F]{2}(?::[0-9A-F]{2}){5}$/', $macAddress)) {
+        return array('ok' => false, 'error' => 'Adresse MAC invalide. Format attendu : AA:BB:CC:DD:EE:FF.');
+      }
+      if ($address !== '' && filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+        return array('ok' => false, 'error' => 'Adresse IPv4 invalide.');
+      }
+
+      $attributes = array(
+        'mac-address' => $macAddress,
+        'server' => 'all',
+        'type' => 'bypassed',
+        'comment' => $comment,
+      );
+      if ($address !== '') {
+        $attributes['address'] = $address;
+      }
+      $response = $api->comm('/ip/hotspot/ip-binding/add', $attributes);
+    } else {
+      if ($address !== '') {
+        $addressParts = explode('/', $address, 2);
+        $prefix = isset($addressParts[1]) ? $addressParts[1] : '';
+        if (filter_var($addressParts[0], FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false || ($prefix !== '' && (!ctype_digit($prefix) || (int) $prefix < 0 || (int) $prefix > 32))) {
+          return array('ok' => false, 'error' => 'Adresse autorisée invalide. Utilisez une IPv4 ou un réseau IPv4/CIDR.');
+        }
+      }
+      $group = $role === 'manager' ? 'mikhmon-revendeur' : 'mikhmon-vendeur';
+      $policy = $role === 'manager'
+        ? 'read,write,test,winbox,password,web,api,rest-api'
+        : 'read,test,winbox,password,web';
+      $groups = $api->comm('/user/group/print', array('?name' => $group));
+      if (!is_array($groups)) {
+        return array('ok' => false, 'error' => 'Impossible de vérifier le groupe RouterOS limité.');
+      }
+      if (empty($groups)) {
+        $groupResponse = $api->comm('/user/group/add', array(
+          'name' => $group,
+          'policy' => $policy,
+          'comment' => 'Groupe limité créé par Mikhmon pour les comptes ' . ($role === 'manager' ? 'revendeurs' : 'vendeurs'),
+        ));
+      } else {
+        $groupId = isset($groups[0]['.id']) ? $groups[0]['.id'] : '';
+        if ($groupId === '') {
+          return array('ok' => false, 'error' => 'Identifiant du groupe RouterOS limité introuvable.');
+        }
+        $groupResponse = $api->comm('/user/group/set', array(
+          '.id' => $groupId,
+          'policy' => $policy,
+        ));
+      }
+      if (!mikhmon_hotspot_routeros_response_ok($groupResponse)) {
+        return array('ok' => false, 'error' => 'MikroTik a refusé la configuration du groupe limité.');
+      }
+
+      $attributes = array(
+        'name' => $username,
+        'password' => $password,
+        'group' => $group,
+        'comment' => $comment,
+      );
+      if ($address !== '') {
+        $attributes['address'] = $address;
+      }
+      $response = $api->comm('/user/add', $attributes);
+    }
+
+    if (!mikhmon_hotspot_routeros_response_ok($response)) {
+      return array('ok' => false, 'error' => 'MikroTik a refusé la création du compte.');
+    }
+
+    return array(
+      'ok' => true,
+      'mode' => $mode,
+      'candidate' => array(
+        'account_key' => $username,
+        'username' => $username,
+        'password' => $password,
+        'display_name' => $displayName,
+        'comment' => $comment,
+        'source' => $mode,
+      ),
+    );
   }
 
   function mikhmon_hotspot_account_record($candidate, $session, $role, $password = null)

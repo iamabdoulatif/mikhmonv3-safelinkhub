@@ -69,6 +69,7 @@ flatten_image() {
     --platform "$platform" \
     --change 'ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' \
     --change 'ENV PHP_INI_DIR=/usr/local/etc/php' \
+    --change 'ENV PHP_CLI_SERVER_WORKERS=4' \
     --change 'WORKDIR /src' \
     --change 'EXPOSE 80' \
     --change 'ENTRYPOINT ["php"]' \

@@ -217,17 +217,11 @@ if (!isset($_SESSION["mikhmon"])) {
   $incomeMonthFormatted = mikhmon_format_money_amount(0, $currency, $cekindo);
   if ($livereport != "disable") {
     $currentDayKey = $clockDayKey;
-    $currentMonthKey = mikhmon_sale_month_key($currentDayKey);
-    $salesScripts = $API->comm("/system/script/print", array(
-      "?comment" => "mikhmon",
-    ));
-    if (is_array($salesScripts)) {
-      $incomeSummary = mikhmon_income_summary_from_scripts($salesScripts, $currentDayKey, $currentMonthKey);
-      $incomeTodayCount = $incomeSummary['today_count'];
-      $incomeTodayTotal = $incomeSummary['today_total'];
-      $incomeMonthCount = $incomeSummary['month_count'];
-      $incomeMonthTotal = $incomeSummary['month_total'];
-    }
+    $incomeSummary = mikhmon_income_summary_from_counter_files($API, $clockDayKey);
+    $incomeTodayCount = $incomeSummary['today_count'];
+    $incomeTodayTotal = $incomeSummary['today_total'];
+    $incomeMonthCount = $incomeSummary['month_count'];
+    $incomeMonthTotal = $incomeSummary['month_total'];
 
     $incomeTodayFormatted = mikhmon_format_money_amount($incomeTodayTotal, $currency, $cekindo);
     $incomeMonthFormatted = mikhmon_format_money_amount($incomeMonthTotal, $currency, $cekindo);

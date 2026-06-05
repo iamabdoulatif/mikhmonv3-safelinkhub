@@ -105,6 +105,18 @@ if ($targets !== array('alpha', 'beta')) {
   exit(1);
 }
 
+$historicalSellers = mikhmon_accounting_historical_sellers($sales, 'ALB-TECH', array(
+  'alpha' => $sellers['alpha'],
+));
+if (!isset($historicalSellers['beta']) || $historicalSellers['beta']['session'] !== 'ALB-TECH' || empty($historicalSellers['beta']['historical'])) {
+  fwrite(STDERR, 'sales from sellers missing in local config must remain visible as historical sellers' . PHP_EOL);
+  exit(1);
+}
+if (isset($historicalSellers['alpha'])) {
+  fwrite(STDERR, 'historical seller recovery must not duplicate configured sellers' . PHP_EOL);
+  exit(1);
+}
+
 $managerPage = file_get_contents(__DIR__ . '/../manager.php');
 $adminPage = file_get_contents(__DIR__ . '/../settings/manage_sellers.php');
 if (strpos($managerPage, "\$managerAllowedActions = array('dashboard', 'overview', 'accounting', 'tickets', 'vendors', 'logout')") === false) {
@@ -118,6 +130,11 @@ if (strpos($managerPage, 'Compte vendeur') === false || strpos($managerPage, 'He
 if (strpos($managerPage, 'mikhmon_accounting_notice_totals_for_targets($accountingSummary, $accountingNoticeTargets, $currency, $cekindo)') === false
     || strpos($managerPage, '$accountingNoticeTotals') === false) {
   fwrite(STDERR, 'manager accounting notifications must pass totals and currency' . PHP_EOL);
+  exit(1);
+}
+if (strpos($managerPage, 'mikhmon_accounting_historical_sellers($getSales, $manager_session_name, $managerSellersData)') === false
+    || strpos($adminPage, 'mikhmon_accounting_historical_sellers($adminAccountingSales, $session, $adminAccountingSellersData)') === false) {
+  fwrite(STDERR, 'manager and admin accounting must include sellers reconstructed from historical RouterOS sales' . PHP_EOL);
   exit(1);
 }
 if (strpos($adminPage, 'ms-section-accounting') === false) {

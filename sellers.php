@@ -42,7 +42,7 @@ if ($_SESSION['theme'] == "") {
 
 // ── Déconnexion vendeur ──────────────────────────────────────────────────────
 if ($action == 'logout') {
-    unset($_SESSION['seller_username'], $_SESSION['seller_name'], $_SESSION['seller_session']);
+    unset($_SESSION['seller_username'], $_SESSION['seller_name'], $_SESSION['seller_session'], $_SESSION[mikhmon_revenue_visibility_key('seller')]);
     ob_end_clean();
     header("Location: ./sellers.php");
     exit;
@@ -53,7 +53,7 @@ $login_error = '';
 if (isset($_POST['seller_login'])) {
     $su = trim($_POST['seller_user']);
     $sp = $_POST['seller_pass'];
-    if (isset($sellers_data[$su]) && $sp === decrypt($sellers_data[$su]['password'])) {
+    if (isset($sellers_data[$su]) && mikhmon_account_password_matches($sp, $sellers_data[$su]['password'])) {
         $_SESSION['seller_username'] = $su;
         $_SESSION['seller_name']     = $sellers_data[$su]['name'];
         $_SESSION['seller_session']  = $sellers_data[$su]['session'];
@@ -68,6 +68,11 @@ if (isset($_POST['seller_login'])) {
 // ── Vérifier si le vendeur est connecté ─────────────────────────────────────
 $seller_logged_in = isset($_SESSION['seller_username'])
     && isset($sellers_data[$_SESSION['seller_username']]);
+
+if ($seller_logged_in) {
+    mikhmon_revenue_handle_toggle('seller');
+}
+$sellerRevenueVisible = mikhmon_revenue_is_visible('seller');
 
 // ── Si connecté : charger les données de vente ──────────────────────────────
 $getData    = array();
@@ -801,6 +806,7 @@ if ($seller_logged_in && $action === 'generate') {
     </a>
   </div>
   <div class="navbar-right">
+    <?= mikhmon_revenue_toggle_button($sellerRevenueVisible) ?>
     <a href="<?= $sellerDashboardUrl ?>"><i class="fa fa-dashboard mr-1"></i> <?= $_dashboard ?></a>
     <a href="./sellers.php?action=logout"><i class="fa fa-sign-out mr-1"></i> <?= $_logout ?></a>
   </div>
@@ -1730,7 +1736,7 @@ filterTicketRows();
           <div class="box bg-red bmh-75">
             <a href="./sellers.php?idbl=<?= strtolower(date('M')).date('Y') ?>">
               <?php if ($sellerCommissionRate > 0): ?>
-              <h1><?= mikhmon_format_money_amount($sellerCommissionAmount, $currency, $cekindo) ?></h1>
+              <h1><?= mikhmon_revenue_money($sellerRevenueVisible, $sellerCommissionAmount, $currency, $cekindo) ?></h1>
               <div><i class="fa fa-percent"></i> Commission (<?= $sellerCommissionRate ?>%)</div>
               <?php else: ?>
               <h1>—</h1>
@@ -1754,7 +1760,7 @@ filterTicketRows();
         <div class="col-3 col-box-6">
           <div class="box bg-blue bmh-75">
             <a href="./sellers.php?idhr=<?= htmlspecialchars($today_str) ?>">
-              <h1><?= mikhmon_format_money_amount($todayRevenue, $currency, $cekindo) ?></h1>
+              <h1><?= mikhmon_revenue_money($sellerRevenueVisible, $todayRevenue, $currency, $cekindo) ?></h1>
               <div><i class="fa fa-sun-o"></i> Aujourd'hui (<?= $todaySalesCount ?> vcr)</div>
             </a>
           </div>
@@ -1763,7 +1769,7 @@ filterTicketRows();
         <div class="col-3 col-box-6">
           <div class="box bg-green bmh-75">
             <a href="./sellers.php?idbl=<?= strtolower(date('M')).date('Y') ?>">
-              <h1><?= mikhmon_format_money_amount($monthRevenue, $currency, $cekindo) ?></h1>
+              <h1><?= mikhmon_revenue_money($sellerRevenueVisible, $monthRevenue, $currency, $cekindo) ?></h1>
               <div><i class="fa fa-calendar"></i> <?= date('M Y') ?> (<?= $monthSalesCount ?> vcr)</div>
             </a>
           </div>
@@ -1773,10 +1779,10 @@ filterTicketRows();
           <div class="box bg-yellow bmh-75">
             <a href="./sellers.php?idbl=<?= strtolower(date('M')).date('Y') ?>">
               <?php if ($sellerCommissionRate > 0): ?>
-              <h1><?= mikhmon_format_money_amount($totalNetRevenue, $currency, $cekindo) ?></h1>
+              <h1><?= mikhmon_revenue_money($sellerRevenueVisible, $totalNetRevenue, $currency, $cekindo) ?></h1>
               <div><i class="fa fa-bank"></i> Net caisse (−<?= $sellerCommissionRate ?>%)</div>
               <?php else: ?>
-              <h1><?= mikhmon_format_money_amount($totalRevenue, $currency, $cekindo) ?></h1>
+              <h1><?= mikhmon_revenue_money($sellerRevenueVisible, $totalRevenue, $currency, $cekindo) ?></h1>
               <div><i class="fa fa-bank"></i> Total encaissé</div>
               <?php endif; ?>
             </a>
@@ -1787,7 +1793,7 @@ filterTicketRows();
           <div class="box bg-red bmh-75">
             <a href="./sellers.php?idbl=<?= strtolower(date('M')).date('Y') ?>">
               <?php if ($sellerCommissionRate > 0): ?>
-              <h1><?= mikhmon_format_money_amount($sellerCommissionAmount, $currency, $cekindo) ?></h1>
+              <h1><?= mikhmon_revenue_money($sellerRevenueVisible, $sellerCommissionAmount, $currency, $cekindo) ?></h1>
               <div><i class="fa fa-percent"></i> Ma commission</div>
               <?php else: ?>
               <h1>—</h1>
@@ -1970,7 +1976,7 @@ filterTicketRows();
         <div class="col-3 col-box-6 seller-bootstrap-col">
           <div class="box bg-green bmh-75">
             <a href="#">
-              <h1><?= $totalRevenue > 0 ? mikhmon_format_money_amount($totalRevenue, $currency, $cekindo) : '—' ?></h1>
+              <h1><?= $totalRevenue > 0 ? mikhmon_revenue_money($sellerRevenueVisible, $totalRevenue, $currency, $cekindo) : '—' ?></h1>
               <div><i class="fa fa-money"></i> <?= isset($_seller_ca) ? $_seller_ca : 'Chiffre d\'affaires' ?></div>
             </a>
           </div>
@@ -1980,7 +1986,7 @@ filterTicketRows();
           <div class="box bg-yellow bmh-75">
             <a href="#">
               <?php if ($sellerCommissionRate > 0 && $totalRevenue > 0): ?>
-              <h1><?= mikhmon_format_money_amount($sellerCommissionAmount, $currency, $cekindo) ?></h1>
+              <h1><?= mikhmon_revenue_money($sellerRevenueVisible, $sellerCommissionAmount, $currency, $cekindo) ?></h1>
               <div><i class="fa fa-percent"></i> Commission <?= $sellerCommissionRate ?>%</div>
               <?php elseif ($sellerCommissionRate > 0): ?>
               <h1><?= isset($currency) ? $currency : '' ?> 0</h1>
@@ -2020,7 +2026,7 @@ filterTicketRows();
         <div class="col-3 col-box-6">
           <div class="box bg-blue bmh-75">
             <a href="#">
-              <h1><?= mikhmon_format_money_amount($totalRevenue, $currency, $cekindo) ?></h1>
+              <h1><?= mikhmon_revenue_money($sellerRevenueVisible, $totalRevenue, $currency, $cekindo) ?></h1>
               <div><i class="fa fa-money"></i> Ventes totales · <?= $TotalReg ?> vcr</div>
             </a>
           </div>
@@ -2029,7 +2035,7 @@ filterTicketRows();
         <div class="col-3 col-box-6">
           <div class="box bg-yellow bmh-75">
             <a href="#">
-              <h1><?= mikhmon_format_money_amount($sellerCommissionAmount, $currency, $cekindo) ?></h1>
+              <h1><?= mikhmon_revenue_money($sellerRevenueVisible, $sellerCommissionAmount, $currency, $cekindo) ?></h1>
               <div><i class="fa fa-percent"></i> − Commission <?= $sellerCommissionRate ?>%</div>
             </a>
           </div>
@@ -2038,7 +2044,7 @@ filterTicketRows();
         <div class="col-3 col-box-6">
           <div class="box bg-green bmh-75">
             <a href="#">
-              <h1><?= mikhmon_format_money_amount($totalNetRevenue, $currency, $cekindo) ?></h1>
+              <h1><?= mikhmon_revenue_money($sellerRevenueVisible, $totalNetRevenue, $currency, $cekindo) ?></h1>
               <div><i class="fa fa-bank"></i> = Net caisse · <?= $sellerCommissionRate ?>% déduit</div>
             </a>
           </div>
@@ -2091,9 +2097,9 @@ filterTicketRows();
           <td data-label="<?= htmlspecialchars($_user_name) ?>"><span class="seller-sales-cell-value"><?= htmlspecialchars($sale['user']) ?></span></td>
           <td data-label="<?= htmlspecialchars($_profile) ?>"><span class="seller-sales-cell-value"><?= htmlspecialchars($sale['profile']) ?></span></td>
           <?php if ($sellerCommissionRate > 0): ?>
-          <td class="text-right" data-label="Prix" style="color:#f57f17;"><span class="seller-sales-cell-value"><?= mikhmon_format_money_amount($salePrice, $currency, $cekindo) ?></span></td>
-          <td class="text-right" data-label="Commission <?= (int)$sellerCommissionRate ?>%" style="color:#8e44ad;font-weight:bold;"><span class="seller-sales-cell-value">− <?= mikhmon_format_money_amount($saleComm, $currency, $cekindo) ?></span></td>
-          <td class="text-right" data-label="Net caisse" style="color:#27ae60;font-weight:bold;"><span class="seller-sales-cell-value"><?= mikhmon_format_money_amount($saleNet, $currency, $cekindo) ?></span></td>
+          <td class="text-right" data-label="Prix" style="color:#f57f17;"><span class="seller-sales-cell-value"><?= mikhmon_revenue_money($sellerRevenueVisible, $salePrice, $currency, $cekindo) ?></span></td>
+          <td class="text-right" data-label="Commission <?= (int)$sellerCommissionRate ?>%" style="color:#8e44ad;font-weight:bold;"><span class="seller-sales-cell-value">− <?= mikhmon_revenue_money($sellerRevenueVisible, $saleComm, $currency, $cekindo) ?></span></td>
+          <td class="text-right" data-label="Net caisse" style="color:#27ae60;font-weight:bold;"><span class="seller-sales-cell-value"><?= mikhmon_revenue_money($sellerRevenueVisible, $saleNet, $currency, $cekindo) ?></span></td>
           <?php endif; ?>
         </tr>
         <?php endforeach; ?>
@@ -2107,9 +2113,9 @@ filterTicketRows();
       <tfoot>
         <tr class="seller-sales-total-row">
           <td colspan="5" data-label="Total"><span class="seller-sales-cell-value"><i class="fa fa-sigma"></i> TOTAL (<?= $TotalReg ?> ticket<?= $TotalReg > 1 ? 's' : '' ?>)</span></td>
-          <td class="text-right total-gross" data-label="Prix"><span class="seller-sales-cell-value"><?= mikhmon_format_money_amount($totalRevenue, $currency, $cekindo) ?></span></td>
-          <td class="text-right total-commission" data-label="Commission <?= (int)$sellerCommissionRate ?>%"><span class="seller-sales-cell-value">− <?= mikhmon_format_money_amount($sellerCommissionAmount, $currency, $cekindo) ?></span></td>
-          <td class="text-right total-net" data-label="Net caisse"><span class="seller-sales-cell-value"><?= mikhmon_format_money_amount($totalNetRevenue, $currency, $cekindo) ?></span></td>
+          <td class="text-right total-gross" data-label="Prix"><span class="seller-sales-cell-value"><?= mikhmon_revenue_money($sellerRevenueVisible, $totalRevenue, $currency, $cekindo) ?></span></td>
+          <td class="text-right total-commission" data-label="Commission <?= (int)$sellerCommissionRate ?>%"><span class="seller-sales-cell-value">− <?= mikhmon_revenue_money($sellerRevenueVisible, $sellerCommissionAmount, $currency, $cekindo) ?></span></td>
+          <td class="text-right total-net" data-label="Net caisse"><span class="seller-sales-cell-value"><?= mikhmon_revenue_money($sellerRevenueVisible, $totalNetRevenue, $currency, $cekindo) ?></span></td>
         </tr>
       </tfoot>
       <?php endif; ?>

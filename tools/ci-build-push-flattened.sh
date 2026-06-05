@@ -222,6 +222,7 @@ build_flat_image() {
 
   docker export "$container_name" | docker import \
     --platform "$platform" \
+    --change 'ENV PHP_CLI_SERVER_WORKERS=4' \
     --change 'ENTRYPOINT ["php"]' \
     --change 'CMD ["-S","0.0.0.0:80","-t","/src/src/"]' \
     --change 'WORKDIR /src' \

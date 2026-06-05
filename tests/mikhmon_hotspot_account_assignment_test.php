@@ -31,6 +31,10 @@ $ipBindings = array(
     array('.id' => '*b5', 'comment' => 'bema | MIKHMON_ACCOUNT role=vendeur session=ALB-TECH account=bema'),
     array('.id' => '*b6', 'comment' => 'mikhmon-ipbinding|profile=1H|validity=1h|Nabala | MIKHMON_ACCOUNT role=gerant session=ALB-TECH account=Nabala'),
 );
+$routerUsers = array(
+    array('.id' => '*r1', 'name' => 'router_seller', 'group' => 'mikhmon-vendeur', 'comment' => mikhmon_hotspot_assignment_comment('Router Seller', 'ALB-TECH', 'seller', 'router_seller', password_hash('router-secret', PASSWORD_DEFAULT))),
+    array('.id' => '*r2', 'name' => 'router_manager', 'group' => 'mikhmon-revendeur', 'comment' => mikhmon_hotspot_assignment_comment('Router Manager', 'ALB-TECH', 'manager', 'router_manager', password_hash('manager-secret', PASSWORD_DEFAULT))),
+);
 
 $candidates = mikhmon_hotspot_default_account_candidates($users, $sellers, $managers);
 
@@ -134,7 +138,7 @@ if ($bindingRecord['key'] !== 'Papatchegbe' || $bindingRecord['record']['name'] 
     exit(1);
 }
 
-$restored = mikhmon_hotspot_restored_account_records($users, $ipBindings, 'ALB-TECH', array(), array());
+$restored = mikhmon_hotspot_restored_account_records($users, $ipBindings, 'ALB-TECH', array(), array(), $routerUsers);
 if (!isset($restored['managers']['recovery']) || $restored['managers']['recovery']['name'] !== 'Recovery Shop' || $restored['managers']['recovery']['password'] !== 'recovery-pass') {
     fwrite(STDERR, 'hotspot user footprints must restore manager accounts for a recreated session' . PHP_EOL);
     exit(1);
@@ -145,6 +149,14 @@ if (!isset($restored['sellers']['bema']) || $restored['sellers']['bema']['name']
 }
 if (!isset($restored['managers']['Nabala']) || $restored['managers']['Nabala']['name'] !== 'Nabala') {
     fwrite(STDERR, 'tagged IP Binding comments must restore manager accounts with the visible comment name' . PHP_EOL);
+    exit(1);
+}
+if (!isset($restored['sellers']['router_seller']) || strpos($restored['sellers']['router_seller']['password'], '$') !== 0 || !password_verify('router-secret', $restored['sellers']['router_seller']['password'])) {
+    fwrite(STDERR, 'limited RouterOS seller accounts must be restorable with a non-reversible Mikhmon password verifier' . PHP_EOL);
+    exit(1);
+}
+if (!isset($restored['managers']['router_manager']) || !password_verify('manager-secret', $restored['managers']['router_manager']['password'])) {
+    fwrite(STDERR, 'limited RouterOS manager accounts must be restorable with a non-reversible Mikhmon password verifier' . PHP_EOL);
     exit(1);
 }
 
@@ -208,6 +220,62 @@ if (!$clearManagerOk || count($fakeApiManager->calls) !== 1 || $fakeApiManager->
     exit(1);
 }
 
+$provisionApi = new MikhmonHotspotAssignmentFakeApi();
+$provisionedSeller = mikhmon_hotspot_provision_account($provisionApi, 'hotspot_user', 'ALB-TECH', 'seller', 'seller_new', 'seller-pass', 'Seller New');
+if (!$provisionedSeller['ok'] || $provisionApi->calls[0][0] !== '/ip/hotspot/user/add') {
+    fwrite(STDERR, 'seller creation must provision a new MikroTik Hotspot user' . PHP_EOL);
+    exit(1);
+}
+$sellerAdd = $provisionApi->calls[0][1];
+if ($sellerAdd['name'] !== 'seller_new' || $sellerAdd['password'] !== 'seller-pass' || $sellerAdd['profile'] !== 'default' || strpos($sellerAdd['comment'], 'role=vendeur') === false || strpos($sellerAdd['comment'], 'auth=') === false) {
+    fwrite(STDERR, 'new seller Hotspot user must use the portal credentials and seller footprint' . PHP_EOL);
+    exit(1);
+}
+
+$bindingApi = new MikhmonHotspotAssignmentFakeApi();
+$provisionedManager = mikhmon_hotspot_provision_account($bindingApi, 'ip_binding', 'ALB-TECH', 'manager', 'manager_new', 'manager-pass', 'Manager New', 'aa:bb:cc:dd:ee:ff', '10.10.0.44');
+if (!$provisionedManager['ok'] || $bindingApi->calls[0][0] !== '/ip/hotspot/ip-binding/add') {
+    fwrite(STDERR, 'manager creation must provision a new MikroTik IP Binding' . PHP_EOL);
+    exit(1);
+}
+$bindingAdd = $bindingApi->calls[0][1];
+if ($bindingAdd['mac-address'] !== 'AA:BB:CC:DD:EE:FF' || $bindingAdd['address'] !== '10.10.0.44' || $bindingAdd['type'] !== 'bypassed' || strpos($bindingAdd['comment'], 'role=gerant') === false) {
+    fwrite(STDERR, 'new manager IP Binding must be bypassed and carry the manager footprint' . PHP_EOL);
+    exit(1);
+}
+
+$invalidBinding = mikhmon_hotspot_provision_account(new MikhmonHotspotAssignmentFakeApi(), 'ip_binding', 'ALB-TECH', 'seller', 'bad_mac', 'pass', 'Bad Mac', 'invalid');
+if ($invalidBinding['ok']) {
+    fwrite(STDERR, 'IP Binding creation must reject invalid MAC addresses' . PHP_EOL);
+    exit(1);
+}
+
+$routerSellerApi = new MikhmonHotspotAssignmentFakeApi();
+$routerSeller = mikhmon_hotspot_provision_account($routerSellerApi, 'router_user', 'ALB-TECH', 'seller', 'seller_router', 'seller-pass', 'Seller Router', '', '10.10.0.0/24');
+if (!$routerSeller['ok'] || count($routerSellerApi->calls) !== 3 || $routerSellerApi->calls[1][0] !== '/user/group/add' || $routerSellerApi->calls[2][0] !== '/user/add') {
+    fwrite(STDERR, 'seller RouterOS account must create its limited group and router user' . PHP_EOL);
+    exit(1);
+}
+$sellerGroup = $routerSellerApi->calls[1][1];
+$sellerRouterUser = $routerSellerApi->calls[2][1];
+if ($sellerGroup['name'] !== 'mikhmon-vendeur' || $sellerGroup['policy'] !== 'read,test,winbox,password,web' || $sellerRouterUser['group'] !== 'mikhmon-vendeur' || $sellerRouterUser['address'] !== '10.10.0.0/24' || strpos($sellerRouterUser['comment'], 'auth=') === false) {
+    fwrite(STDERR, 'seller RouterOS group must remain read-only and limited to its allowed address' . PHP_EOL);
+    exit(1);
+}
+
+$routerManagerApi = new MikhmonHotspotAssignmentFakeApi();
+$routerManager = mikhmon_hotspot_provision_account($routerManagerApi, 'router_user', 'ALB-TECH', 'manager', 'manager_router', 'manager-pass', 'Manager Router');
+if (!$routerManager['ok'] || $routerManagerApi->calls[1][1]['name'] !== 'mikhmon-revendeur' || $routerManagerApi->calls[1][1]['policy'] !== 'read,write,test,winbox,password,web,api,rest-api') {
+    fwrite(STDERR, 'manager RouterOS group must have extended rights without full administration policies' . PHP_EOL);
+    exit(1);
+}
+foreach (array('policy', 'sensitive', 'reboot', 'ssh', 'ftp', 'sniff') as $forbiddenPolicy) {
+    if (in_array($forbiddenPolicy, explode(',', $routerManagerApi->calls[1][1]['policy']), true)) {
+        fwrite(STDERR, 'manager RouterOS group must not receive dangerous policy: ' . $forbiddenPolicy . PHP_EOL);
+        exit(1);
+    }
+}
+
 $page = file_get_contents($root . '/settings/manage_sellers.php');
 $requiredPageSnippets = array(
     "include_once('./include/hotspot_account_assignment.php')",
@@ -217,18 +285,22 @@ $requiredPageSnippets = array(
     '"?profile" => "default"',
     'mikhmon_hotspot_default_account_candidates',
     'mikhmon_hotspot_assignment_comment',
+    'mikhmon_hotspot_provision_account',
     'mikhmon_hotspot_routeros_response_ok',
     '$hotspotIpBindingRows',
+    '$routerUserRows',
     '$accountIdentityCandidates',
     'mikhmon_hotspot_restored_account_records',
     'mikhmon_hotspot_clear_account_footprints',
-    '"/ip/hotspot/ip-binding/set"',
-    "mikhmon_hotspot_find_account_identity_candidate(\$hotspotDefaultUsersRaw, \$hotspotIpBindingRows, \$_POST['new_user']",
-    "mikhmon_hotspot_find_account_identity_candidate(\$hotspotDefaultUsersRaw, \$hotspotIpBindingRows, \$_POST['nm_user']",
+    'name="new_mode" id="seller-new-mode"',
+    'name="nm_mode" id="manager-new-mode"',
+    '<option value="router_user">Créer un compte RouterOS limité</option>',
     'name="new_user" id="seller-new-user"',
     'name="nm_user" id="manager-new-user"',
-    'foreach ($accountIdentityCandidates as $candidate)',
-    'data-label="<?= htmlspecialchars($candidate[\'display_name\']) ?>"',
+    'name="new_mac" id="seller-new-mac"',
+    'name="nm_mac" id="manager-new-mac"',
+    'name="new_address" id="seller-new-address"',
+    'name="nm_address" id="manager-new-address"',
     'name="new_session" value="<?= htmlspecialchars($session) ?>"',
     'name="nm_session" value="<?= htmlspecialchars($session) ?>"',
     'class="identity-create-form identity-create-seller"',
@@ -239,6 +311,8 @@ $requiredPageSnippets = array(
     '@media (max-width: 640px)',
     '.identity-form-grid { grid-template-columns: 1fr; }',
     '.identity-actions .btn { width:100%;',
+    "msUpdateProvisionMode('seller')",
+    "msUpdateProvisionMode('manager')",
 );
 
 foreach ($requiredPageSnippets as $snippet) {
@@ -248,8 +322,13 @@ foreach ($requiredPageSnippets as $snippet) {
     }
 }
 
-if (strpos($page, 'type="text" name="new_user"') !== false || strpos($page, 'type="text" name="nm_user"') !== false) {
-    fwrite(STDERR, 'new seller and manager identifiers must be selected from profile=default hotspot users, not typed manually' . PHP_EOL);
+if (strpos($page, 'Sélectionner un utilisateur default ou un commentaire IP Binding') !== false) {
+    fwrite(STDERR, 'new seller and manager creation must no longer require a pre-existing MikroTik identity' . PHP_EOL);
+    exit(1);
+}
+
+if (strpos($page, '$API_ms->comm("/user/print")') === false) {
+    fwrite(STDERR, 'admin seller page must read limited RouterOS users for account reconstruction' . PHP_EOL);
     exit(1);
 }
 

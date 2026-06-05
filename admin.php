@@ -86,6 +86,7 @@ if ($isLoginRoute) {
   include('./include/sellers_config.php');
   include('./include/managers_config.php');
   include_once('./lib/routeros_api.class.php');
+  include_once('./include/mikhmon_compat.php');
   include_once('./include/auth.php');
   include_once('./include/csrf.php');
 
@@ -120,7 +121,7 @@ if ($isLoginRoute) {
   if (isset($_POST['manager_login'])) {
     $mu = trim($_POST['manager_user']);
     $mp = $_POST['manager_pass'];
-    if (!empty($managers_data) && isset($managers_data[$mu]) && $mp === decrypt($managers_data[$mu]['password'])) {
+    if (!empty($managers_data) && isset($managers_data[$mu]) && mikhmon_account_password_matches($mp, $managers_data[$mu]['password'])) {
       session_regenerate_id(true);
       $_SESSION['manager_username'] = $mu;
       $_SESSION['manager_name']     = $managers_data[$mu]['name'];
@@ -136,7 +137,7 @@ if ($isLoginRoute) {
   if (isset($_POST['seller_login'])) {
     $su = trim($_POST['seller_user']);
     $sp = $_POST['seller_pass'];
-    if (!empty($sellers_data) && isset($sellers_data[$su]) && $sp === decrypt($sellers_data[$su]['password'])) {
+    if (!empty($sellers_data) && isset($sellers_data[$su]) && mikhmon_account_password_matches($sp, $sellers_data[$su]['password'])) {
       session_regenerate_id(true);
       $_SESSION['seller_username'] = $su;
       $_SESSION['seller_name']     = $sellers_data[$su]['name'];
@@ -223,7 +224,13 @@ if (!$hasAdminSession && !$hasEditorPortalAccess) {
   include_once('./include/menu.php');
   $API = new RouterosAPI();
   $API->debug = false;
-  if ($API->connect($iphost, $userhost, decrypt($passwdhost))){
+  $API->timeout = 3;
+  $API->attempts = 1;
+  $API->delay = 0;
+  session_write_close();
+  $routerConnected = $API->connect($iphost, $userhost, decrypt($passwdhost));
+  session_start();
+  if ($routerConnected){
     $_SESSION["connect"] = "<b class='text-green'>Connected</b>";
     echo "<script>window.location='./?session=" . $session . "'</script>";
   } else {
