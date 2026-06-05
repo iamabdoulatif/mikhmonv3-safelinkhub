@@ -9,9 +9,11 @@ error_reporting(0);
 ob_start("ob_gzhandler");
 
 $url    = $_SERVER['REQUEST_URI'];
-$action = isset($_GET['action']) && $_GET['action'] !== '' ? $_GET['action'] : 'dashboard';
 $idbl   = isset($_GET['idbl'])   ? $_GET['idbl']   : '';
 $idhr   = isset($_GET['idhr'])   ? $_GET['idhr']   : '';
+$action = isset($_GET['action']) && $_GET['action'] !== ''
+    ? $_GET['action']
+    : (($idbl !== '' || $idhr !== '') ? 'sales' : 'dashboard');
 $prefix = isset($_GET['prefix']) ? $_GET['prefix']  : '';
 
 // Charger les dépendances de base
