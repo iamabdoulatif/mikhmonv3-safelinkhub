@@ -448,6 +448,13 @@ if ($seller_router_connected) {
     $gi = $API->comm("/system/identity/print");
     $identity = isset($gi[0]['name']) ? $gi[0]['name'] : '';
 }
+$sellerDisplayIdentity = trim((string) $identity);
+if ($sellerDisplayIdentity === ''
+    || strlen($sellerDisplayIdentity) > 64
+    || strpos($sellerDisplayIdentity, '-|-') !== false
+    || preg_match('/[\r\n]/', $sellerDisplayIdentity)) {
+    $sellerDisplayIdentity = $seller_session_name;
+}
 $sellerDashboardUrl = './sellers.php?action=dashboard';
 $sellerVoucherPrintUrl = './voucher/print.php?session=' . urlencode($seller_session_name);
 
@@ -822,7 +829,7 @@ if ($seller_logged_in && $action === 'generate') {
 <!-- Sidenav -->
 <div id="sidenav" class="sidenav">
   <div class="menu text-center align-middle card-header" style="border-radius:0;position:relative;">
-    <h3><?= htmlspecialchars($identity ?: $seller_session_name) ?></h3>
+    <h3><?= htmlspecialchars($sellerDisplayIdentity) ?></h3>
     <small style="color:#aaa;"><?= htmlspecialchars($sellerName) ?></small>
     <a id="closeSidenav" href="javascript:void(0)" title="Fermer le menu"
        style="position:absolute;top:8px;right:10px;font-size:18px;color:#aaa;display:none;text-decoration:none;">
@@ -1693,7 +1700,7 @@ filterTicketRows();
   <div class="card" style="margin-bottom:14px;">
     <div class="card-body" style="padding:14px 18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
       <div style="flex:1;min-width:180px;">
-        <div class="portal-dark-muted" style="font-size:13px;color:#aaa;margin-bottom:2px;"><i class="fa fa-wifi"></i> <?= htmlspecialchars($identity ?: $seller_session_name) ?></div>
+        <div class="portal-dark-muted" style="font-size:13px;color:#aaa;margin-bottom:2px;"><i class="fa fa-wifi"></i> <?= htmlspecialchars($sellerDisplayIdentity) ?></div>
         <div style="font-size:17px;font-weight:bold;"><?= htmlspecialchars($sellerName) ?></div>
         <span style="background:#27ae60;color:#fff;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:bold;"><i class="fa fa-user"></i> Vendeur</span>
       </div>

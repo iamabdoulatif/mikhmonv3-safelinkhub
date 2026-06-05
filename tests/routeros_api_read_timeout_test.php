@@ -18,7 +18,9 @@ fwrite($sockets[1], chr(2) . 'ab' . chr(5) . 'cd');
 $startedAt = microtime(true);
 $response = $api->read(false);
 $elapsed = microtime(true) - $startedAt;
-fclose($api->socket);
+if (is_resource($api->socket)) {
+    fclose($api->socket);
+}
 fclose($sockets[1]);
 
 if ($response !== array('ab')) {
@@ -28,6 +30,11 @@ if ($response !== array('ab')) {
 
 if ($elapsed < 0.8 || $elapsed > 2) {
     fwrite(STDERR, "RouterOS API read did not respect its timeout\n");
+    exit(1);
+}
+
+if ($api->connected || $api->comm('/system/identity/print') !== array()) {
+    fwrite(STDERR, "RouterOS API must close a timed out socket and reject later commands\n");
     exit(1);
 }
 

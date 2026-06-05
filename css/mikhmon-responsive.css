@@ -1452,7 +1452,43 @@ img {
   }
 }
 
-/* ── 25. REPORT PAGES – FILTER BAR & SEARCH INPUT ────────────────── */
+/* ── 25. FORM TABLES – LABEL COLUMN COMPACT ON MOBILE ───────────── */
+/* Hotspot/settings forms use <table><tr><td>Label</td><td><input></td>  */
+/* Without width guidance the label column takes too much space on narrow  */
+/* phones. Shrink-wrap the label cell and prevent it from wrapping.        */
+@media screen and (max-width: 749px) {
+  .card-body form .table > tbody > tr > td:first-child,
+  .card-body form .table > tr > td:first-child {
+    white-space: nowrap;
+    width: 1%;
+    padding-right: 12px;
+  }
+}
+
+/* ── 25b. ACTION BUTTON BARS IN FORM PAGES ───────────────────────── */
+/* Hotspot add/edit forms have a bare <div> containing multiple .btn.    */
+/* Make the bar wrap cleanly on mobile with flex.                         */
+@media screen and (max-width: 749px) {
+  .card-body form > div:first-of-type {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: flex-start;
+    margin-bottom: 6px;
+  }
+
+  .card-body form > div:first-of-type .btn,
+  .card-body form > div:first-of-type a.btn,
+  .card-body form > div:first-of-type button {
+    margin: 0;
+    flex: 1 1 auto;
+    min-width: 80px;
+    text-align: center;
+    white-space: nowrap;
+  }
+}
+
+/* ── 26. REPORT PAGES – FILTER BAR & SEARCH INPUT ────────────────── */
 /* selling.php: search input est limité à max-width:150px inline —     */
 /* sur mobile on le laisse pleine largeur et on wrape les boutons.    */
 @media screen and (max-width: 749px) {

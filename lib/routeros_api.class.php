@@ -386,6 +386,7 @@ class RouterosAPI
         while (strlen($data) < $length) {
             $remaining = $deadline - microtime(true);
             if ($remaining <= 0) {
+                $this->disconnect();
                 return false;
             }
 
@@ -396,11 +397,13 @@ class RouterosAPI
             $except = null;
             $ready = @stream_select($read, $write, $except, $seconds, $microseconds);
             if ($ready !== 1) {
+                $this->disconnect();
                 return false;
             }
 
             $chunk = fread($this->socket, $length - strlen($data));
             if ($chunk === false || $chunk === '') {
+                $this->disconnect();
                 return false;
             }
             $data .= $chunk;
@@ -455,6 +458,10 @@ class RouterosAPI
      */
     public function comm($com, $arr = array())
     {
+        if (!$this->connected || !is_resource($this->socket)) {
+            return array();
+        }
+
         $count = count($arr);
         $this->write($com, !$arr);
         $i = 0;
