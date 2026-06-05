@@ -13,7 +13,7 @@ $api->connected = true;
 $api->timeout = 1;
 stream_set_blocking($api->socket, false);
 
-fwrite($sockets[1], chr(5) . 'ab');
+fwrite($sockets[1], chr(2) . 'ab' . chr(5) . 'cd');
 
 $startedAt = microtime(true);
 $response = $api->read(false);
@@ -21,8 +21,8 @@ $elapsed = microtime(true) - $startedAt;
 fclose($api->socket);
 fclose($sockets[1]);
 
-if ($response !== array()) {
-    fwrite(STDERR, "A partial RouterOS response must not be returned\n");
+if ($response !== array('ab')) {
+    fwrite(STDERR, "RouterOS read must keep completed words and discard the partial word\n");
     exit(1);
 }
 

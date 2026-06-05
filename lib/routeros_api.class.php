@@ -287,10 +287,11 @@ class RouterosAPI
     {
         $RESPONSE     = array();
         $receiveddone = false;
+        $deadline = microtime(true) + max(1, (int) $this->timeout);
         while (true) {
             // Read the first byte of input which gives us some or all of the length
             // of the remaining reply.
-            $lengthByte = $this->readBytes(1);
+            $lengthByte = $this->readBytes(1, $deadline);
             if ($lengthByte === false) {
                 break;
             }
@@ -303,14 +304,14 @@ class RouterosAPI
             // and then read in yet another byte.
             if ($BYTE & 128) {
                 if (($BYTE & 192) == 128) {
-                    $lengthBytes = $this->readBytes(1);
+                    $lengthBytes = $this->readBytes(1, $deadline);
                     if ($lengthBytes === false) {
                         break;
                     }
                     $LENGTH = (($BYTE & 63) << 8) + ord($lengthBytes);
                 } else {
                     if (($BYTE & 224) == 192) {
-                        $lengthBytes = $this->readBytes(2);
+                        $lengthBytes = $this->readBytes(2, $deadline);
                         if ($lengthBytes === false) {
                             break;
                         }
@@ -318,7 +319,7 @@ class RouterosAPI
                         $LENGTH = ($LENGTH << 8) + ord($lengthBytes[1]);
                     } else {
                         if (($BYTE & 240) == 224) {
-                            $lengthBytes = $this->readBytes(3);
+                            $lengthBytes = $this->readBytes(3, $deadline);
                             if ($lengthBytes === false) {
                                 break;
                             }
@@ -326,7 +327,7 @@ class RouterosAPI
                             $LENGTH = ($LENGTH << 8) + ord($lengthBytes[1]);
                             $LENGTH = ($LENGTH << 8) + ord($lengthBytes[2]);
                         } else {
-                            $lengthBytes = $this->readBytes(4);
+                            $lengthBytes = $this->readBytes(4, $deadline);
                             if ($lengthBytes === false) {
                                 break;
                             }
@@ -345,7 +346,7 @@ class RouterosAPI
 
             // If we have got more characters to read, read them in.
             if ($LENGTH > 0) {
-                $_ = $this->readBytes($LENGTH);
+                $_ = $this->readBytes($LENGTH, $deadline);
                 if ($_ === false) {
                     break;
                 }
@@ -376,10 +377,12 @@ class RouterosAPI
         return $RESPONSE;
     }
 
-    private function readBytes($length)
+    private function readBytes($length, $deadline = null)
     {
         $data = '';
-        $deadline = microtime(true) + max(1, (int) $this->timeout);
+        if ($deadline === null) {
+            $deadline = microtime(true) + max(1, (int) $this->timeout);
+        }
         while (strlen($data) < $length) {
             $remaining = $deadline - microtime(true);
             if ($remaining <= 0) {
