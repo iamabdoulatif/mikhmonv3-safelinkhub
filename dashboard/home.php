@@ -34,6 +34,7 @@ if (!isset($_SESSION["mikhmon"])) {
   date_default_timezone_set($timezone);
   $clockDisplay = mikhmon_router_clock_display($clock, $timezone);
   $clockDayKey = mikhmon_router_clock_day_key($clock, $timezone);
+  mikhmon_upgrade_legacy_expiration_profiles($API);
 
 // get system resource MikroTik
   $getresource = $API->comm("/system/resource/print");
@@ -217,7 +218,7 @@ if (!isset($_SESSION["mikhmon"])) {
   $incomeMonthFormatted = mikhmon_format_money_amount(0, $currency, $cekindo);
   if ($livereport != "disable") {
     $currentDayKey = $clockDayKey;
-    $incomeSummary = mikhmon_income_summary_from_counter_files($API, $clockDayKey);
+    $incomeSummary = mikhmon_dashboard_income_summary($API, $clockDayKey);
     $incomeTodayCount = $incomeSummary['today_count'];
     $incomeTodayTotal = $incomeSummary['today_total'];
     $incomeMonthCount = $incomeSummary['month_count'];

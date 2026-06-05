@@ -45,5 +45,38 @@ foreach (array('mikhmon-income-day-', 'mikhmon-income-month-', 'mikhmon-income-g
         exit(1);
     }
 }
+if (strpos($scheduler, ':local clockDate [ /system clock get date ];') === false
+    || strpos($scheduler, ':local date [ /system clock get date ];') !== false) {
+    fwrite(STDERR, "Scheduler must avoid RouterOS scheduler context date variable collisions\n");
+    exit(1);
+}
+if (strpos($scheduler, ':if ([:pick $clockDate 4 5] = "-")') === false
+    || strpos($scheduler, ':find $clockDate "-"') !== false) {
+    fwrite(STDERR, "Scheduler must detect ISO dates without RouterOS 7.9 nil comparisons\n");
+    exit(1);
+}
+if (strpos($scheduler, ':if ($o=($month.$year))') !== false
+    || strpos($scheduler, ':if (($saleMonth.$saleYear)=$currentMonthKey)') === false) {
+    fwrite(STDERR, "Scheduler monthly revenue must use the sale date instead of the legacy owner field\n");
+    exit(1);
+}
+if (strpos($scheduler, ':if ($saleDay=$currentDayKey)') === false) {
+    fwrite(STDERR, "Scheduler daily revenue must compare normalized sale dates\n");
+    exit(1);
+}
+if (strpos($scheduler, '[:typeof $a]!="nil"') === false
+    || strpos($scheduler, ':local saleDay [:pick $n 0 $a]') === false) {
+    fwrite(STDERR, "Scheduler must skip malformed legacy sales and derive dates from sale names\n");
+    exit(1);
+}
+if (strpos($scheduler, ':find $n "-|-" ($a+3)') !== false
+    || strpos($scheduler, ':local ap ($a+3);:local b [:find $n "-|-" $ap]') === false) {
+    fwrite(STDERR, "Scheduler must avoid arithmetic directly inside RouterOS find arguments\n");
+    exit(1);
+}
+if (strpos($scheduler, ':local currentMonthKey ($month.$year);:local currentDayKey $dateKey;') === false) {
+    fwrite(STDERR, "Scheduler must preserve current period keys before scanning legacy scripts\n");
+    exit(1);
+}
 
 echo "OK\n";

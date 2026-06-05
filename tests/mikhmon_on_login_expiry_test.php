@@ -13,6 +13,8 @@ $checks = array(
   'on-login creates exact user scheduler' => 'comment="mikhmon-user-expire"',
   'on-login semicolon before expiry scheduler' => '/sys sch remove [find where name="$user" and comment="mikhmon-temp-expire"];:local es',
   'on-login uses ISO start-date for ROS7 compat' => 'start-date=$edf',
+  'temporary scheduler uses normalized clock date' => 'start-date=$dateKey',
+  'on-login avoids RouterOS 7.9 nil date comparison' => ':if ([:pick $clockDate 4 5] = "-")',
   'on-login avoids arithmetic directly inside pick' => ':local ets ($es + 1);:local et [:pick $expKey $ets [:len $expKey]]',
   'on-login converts legacy date to ISO for scheduler' => ':if ([:pick $ed 3 4] = "/")',
   'on-login ISO conversion builds yyyy-mm-dd' => ':set edf ($xy . "-" . $xmm . "-" . $xd)',

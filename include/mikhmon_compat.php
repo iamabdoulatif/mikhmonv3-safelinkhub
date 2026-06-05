@@ -912,19 +912,39 @@ if (!function_exists('mikhmon_month_map')) {
     );
   }
 
+  function mikhmon_dashboard_income_summary($API, $dayKey)
+  {
+    $dayKey = mikhmon_normalize_sale_date($dayKey);
+    mikhmon_ensure_income_counter_scheduler($API);
+    return mikhmon_income_summary_from_counter_files($API, $dayKey);
+  }
+
   function mikhmon_income_counter_scheduler_source()
   {
     return mikhmon_ros_date_compat_block()
       . ':local gt 0;:local gc 0;:local mt 0;:local mc 0;:local dt 0;:local dc 0;'
+      . ':local currentMonthKey ($month.$year);:local currentDayKey $dateKey;'
+      . ':local gp "mikhmon-income-global";:local mp ("mikhmon-income-month-".$currentMonthKey);:local dp ("mikhmon-income-day-".$currentMonthKey."-".$day);'
       . ':foreach i in=[/system script find where comment=mikhmon] do={'
-      . ':local n [/system script get $i name];:local o [/system script get $i owner];:local s [/system script get $i source];'
-      . ':local a [:find $n "-|-"];:local b [:find $n "-|-" ($a+3)];:local c [:find $n "-|-" ($b+3)];:local e [:find $n "-|-" ($c+3)];'
-      . ':local p [:tonum [:pick $n ($c+3) $e]];'
+      . ':local n [/system script get $i name];'
+      . ':local a [:find $n "-|-"];:if ([:typeof $a]!="nil") do={'
+      . ':local ap ($a+3);:local b [:find $n "-|-" $ap];:if ([:typeof $b]!="nil") do={'
+      . ':local bp ($b+3);:local c [:find $n "-|-" $bp];:if ([:typeof $c]!="nil") do={'
+      . ':local cp ($c+3);:local e [:find $n "-|-" $cp];:if ([:typeof $e]!="nil") do={'
+      . ':local p [:tonum [:pick $n $cp $e]];'
+      . ':local saleDay [:pick $n 0 $a];:local saleMonth [:pick $saleDay 0 3];:local saleYear [:pick $saleDay 7 11];'
+      . ':if ([:pick $saleDay 4 5] = "-") do={:set saleYear [:pick $saleDay 0 4];:local smm [:pick $saleDay 5 7];'
+      . ':if ($smm="01") do={:set saleMonth "jan"};:if ($smm="02") do={:set saleMonth "feb"};'
+      . ':if ($smm="03") do={:set saleMonth "mar"};:if ($smm="04") do={:set saleMonth "apr"};'
+      . ':if ($smm="05") do={:set saleMonth "may"};:if ($smm="06") do={:set saleMonth "jun"};'
+      . ':if ($smm="07") do={:set saleMonth "jul"};:if ($smm="08") do={:set saleMonth "aug"};'
+      . ':if ($smm="09") do={:set saleMonth "sep"};:if ($smm="10") do={:set saleMonth "oct"};'
+      . ':if ($smm="11") do={:set saleMonth "nov"};:if ($smm="12") do={:set saleMonth "dec"};'
+      . ':set saleDay ($saleMonth . "/" . [:pick $saleDay 8 10] . "/" . $saleYear);};'
       . ':set gt ($gt+$p);:set gc ($gc+1);'
-      . ':if ($o=($month.$year)) do={:set mt ($mt+$p);:set mc ($mc+1)};'
-      . ':if ($s=$dateKey) do={:set dt ($dt+$p);:set dc ($dc+1)};'
-      . '};'
-      . ':local gp "mikhmon-income-global";:local mp ("mikhmon-income-month-".$month.$year);:local dp ("mikhmon-income-day-".$month.$year."-".$day);'
+      . ':if (($saleMonth.$saleYear)=$currentMonthKey) do={:set mt ($mt+$p);:set mc ($mc+1)};'
+      . ':if ($saleDay=$currentDayKey) do={:set dt ($dt+$p);:set dc ($dc+1)};'
+      . '};};};};};'
       . ':foreach pair in={($gp."-total.txt=".$gt);($gp."-count.txt=".$gc);($mp."-total.txt=".$mt);($mp."-count.txt=".$mc);($dp."-total.txt=".$dt);($dp."-count.txt=".$dc)} do={'
       . ':local x [:find $pair "="];:local f [:pick $pair 0 $x];:local v [:pick $pair ($x+1) [:len $pair]];:local id [/file find where name=$f];'
       . ':if ([:len $id]=0) do={/file add name=$f contents=$v} else={/file set $id contents=$v};'
@@ -934,17 +954,35 @@ if (!function_exists('mikhmon_month_map')) {
   function mikhmon_ensure_income_counter_scheduler($API)
   {
     $name = 'mikhmon-income-cache';
-    $rows = $API->comm('/system/scheduler/print', array('?name' => $name, '.proplist' => '.id,name'));
+    $source = mikhmon_income_counter_scheduler_source();
+    $rows = $API->comm('/system/scheduler/print', array(
+      '?name' => $name,
+      '.proplist' => '.id,name,interval,on-event,disabled',
+    ));
     if (is_array($rows) && !empty($rows)) {
-      return true;
+      $disabled = isset($rows[0]['disabled']) ? strtolower((string) $rows[0]['disabled']) : '';
+      if (isset($rows[0]['interval'], $rows[0]['on-event'])
+          && $rows[0]['interval'] === '15m'
+          && $rows[0]['on-event'] === $source
+          && ($disabled === 'false' || $disabled === 'no')) {
+        return true;
+      }
+      $result = $API->comm('/system/scheduler/set', array(
+        '.id' => $rows[0]['.id'],
+        'interval' => '15m',
+        'comment' => 'mikhmon-income-cache',
+        'on-event' => $source,
+        'disabled' => 'no',
+      ));
+      return is_array($result);
     }
 
     $result = $API->comm('/system/scheduler/add', array(
       'name' => $name,
-      'interval' => '1d',
-      'start-time' => '03:00:00',
+      'interval' => '15m',
+      'start-time' => '00:00:05',
       'comment' => 'mikhmon-income-cache',
-      'on-event' => mikhmon_income_counter_scheduler_source(),
+      'on-event' => $source,
       'disabled' => 'no',
     ));
     return is_array($result);
@@ -975,15 +1013,15 @@ if (!function_exists('mikhmon_month_map')) {
 
   function mikhmon_ros_date_compat_block()
   {
-    return ':local date [ /system clock get date ];'
-      . ':local year [ :pick $date 7 11 ];'
-      . ':local month [ :pick $date 0 3 ];'
-      . ':local day [ :pick $date 4 6 ];'
-      . ':local dateKey $date;'
-      . ':if ([:find $date "-"] != nil) do={'
-      . ':local yyyy [:pick $date 0 4];'
-      . ':local mm [:pick $date 5 7];'
-      . ':local dd [:pick $date 8 10];'
+    return ':local clockDate [ /system clock get date ];'
+      . ':local year [ :pick $clockDate 7 11 ];'
+      . ':local month [ :pick $clockDate 0 3 ];'
+      . ':local day [ :pick $clockDate 4 6 ];'
+      . ':local dateKey $clockDate;'
+      . ':if ([:pick $clockDate 4 5] = "-") do={'
+      . ':local yyyy [:pick $clockDate 0 4];'
+      . ':local mm [:pick $clockDate 5 7];'
+      . ':local dd [:pick $clockDate 8 10];'
       . ':set year $yyyy;'
       . ':set day $dd;'
       . ':if ($mm = "01") do={ :set month "jan";};'
@@ -1077,7 +1115,7 @@ if (!function_exists('mikhmon_month_map')) {
       . ':if ($ucode = "vc" or $ucode = "up" or $comment = "") do={ '
       . mikhmon_ros_date_compat_block()
       . '/sys sch remove [find where name="$user" and comment="mikhmon-temp-expire"]; '
-      . '/sys sch add name="$user" disabled=no start-date=$date interval="' . $validity . '" comment="mikhmon-temp-expire"; '
+      . '/sys sch add name="$user" disabled=no start-date=$dateKey interval="' . $validity . '" comment="mikhmon-temp-expire"; '
       . ':delay 2s; '
       . ':local exp [ /sys sch get [ /sys sch find where name="$user" and comment="mikhmon-temp-expire" ] next-run]; '
       . ':local getxp [:len $exp]; '
@@ -1099,6 +1137,82 @@ if (!function_exists('mikhmon_month_map')) {
     }
 
     return '';
+  }
+
+  function mikhmon_upgrade_legacy_expiration_profiles($API)
+  {
+    $profiles = $API->comm('/ip/hotspot/user/profile/print', array(
+      '.proplist' => '.id,name,on-login',
+    ));
+    if (!is_array($profiles)) {
+      return 0;
+    }
+
+    $updated = 0;
+    foreach ($profiles as $profile) {
+      $profileId = isset($profile['.id']) ? $profile['.id'] : '';
+      $profileName = isset($profile['name']) ? trim((string) $profile['name']) : '';
+      $onLogin = isset($profile['on-login']) ? (string) $profile['on-login'] : '';
+      if ($profileId === '' || !preg_match('/^[A-Za-z0-9_.-]+$/', $profileName)
+          || (strpos($onLogin, 'mikhmon-user-expire') !== false
+            && strpos($onLogin, ':if ([:pick $clockDate 4 5] = "-")') !== false)) {
+        continue;
+      }
+
+      $parts = explode(',', $onLogin);
+      $expireMode = isset($parts[1]) ? trim($parts[1]) : '';
+      $price = isset($parts[2]) ? trim($parts[2]) : '';
+      $validity = mikhmon_normalize_routeros_duration(isset($parts[3]) ? $parts[3] : '');
+      $sellingPrice = isset($parts[4]) ? trim($parts[4]) : '0';
+      $lockStatus = isset($parts[6]) ? trim($parts[6]) : 'Disable';
+      if (!in_array($expireMode, array('rem', 'ntf', 'remc', 'ntfc'), true) || $validity === '') {
+        continue;
+      }
+
+      $record = mikhmon_build_record_script($price, $validity, $profileName);
+      $lock = $lockStatus === 'Enable'
+        ? '; [:local mac $"mac-address"; /ip hotspot user set mac-address=$mac [find where name=$user]]'
+        : '';
+      $newOnLogin = mikhmon_build_on_login_script(
+        $expireMode,
+        $price,
+        $validity,
+        $sellingPrice,
+        $lockStatus,
+        $record,
+        $lock
+      );
+      $API->comm('/ip/hotspot/user/profile/set', array(
+        '.id' => $profileId,
+        'on-login' => $newOnLogin,
+      ));
+
+      $monitorMode = ($expireMode === 'ntf' || $expireMode === 'ntfc')
+        ? 'set limit-uptime=1s'
+        : 'remove';
+      $monitor = mikhmon_build_expire_monitor_script($profileName, $monitorMode);
+      $schedulers = $API->comm('/system/scheduler/print', array(
+        '?name' => $profileName,
+        '.proplist' => '.id,name',
+      ));
+      $schedulerPayload = array(
+        'name' => $profileName,
+        'start-time' => '00:00:05',
+        'interval' => '00:00:30',
+        'on-event' => $monitor,
+        'disabled' => 'no',
+        'comment' => 'Monitor Profile ' . $profileName,
+      );
+      if (is_array($schedulers) && !empty($schedulers[0]['.id'])) {
+        $schedulerPayload['.id'] = $schedulers[0]['.id'];
+        $API->comm('/system/scheduler/set', $schedulerPayload);
+      } else {
+        $API->comm('/system/scheduler/add', $schedulerPayload);
+      }
+      $updated++;
+    }
+
+    return $updated;
   }
 
   function mikhmon_build_expire_monitor_script($profileName, $mode)
