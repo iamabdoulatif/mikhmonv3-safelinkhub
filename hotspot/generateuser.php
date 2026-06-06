@@ -494,7 +494,7 @@ if (!isset($_SESSION["mikhmon"]) && empty($_SESSION['manager_username'])) {
 			if (!$isStandaloneGenerator && $qty < 2) {
 				echo "<script>window.location='./?hotspot-user=" . $u[1] . "&session=" . $session . "'</script>";
 			} elseif (!$isStandaloneGenerator) {
-				echo "<script>window.location='./?hotspot-user=generate&session=" . $session . "'</script>";
+				echo "<script>window.location='./?hotspot=users&comment=" . rawurlencode($commt) . "&session=" . rawurlencode($session) . "'</script>";
 			}
 		}
 	}
