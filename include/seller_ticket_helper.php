@@ -118,19 +118,31 @@ if (!function_exists('mikhmon_comment_assign_seller')) {
             return trim((string)$comment);
         }
 
+        $sellerLabel = $sellerKey;
+        if (is_array($sellersData) && isset($sellersData[$sellerKey]) && is_array($sellersData[$sellerKey])) {
+            $displayName = trim(isset($sellersData[$sellerKey]['name']) ? (string)$sellersData[$sellerKey]['name'] : '');
+            if ($displayName !== '') {
+                $sellerLabel = preg_replace('/[^a-zA-Z0-9_\- ]/', '', $displayName);
+                $sellerLabel = trim(preg_replace('/\s+/', ' ', $sellerLabel));
+                if ($sellerLabel === '') {
+                    $sellerLabel = $sellerKey;
+                }
+            }
+        }
+
         $baseLot = trim(mikhmon_comment_base_lot($comment, $sellersData));
         if ($baseLot === '') {
-            return $sellerKey;
+            return $sellerLabel;
         }
 
         $normalizedBase = strtolower($baseLot);
-        $normalizedSeller = strtolower($sellerKey);
+        $normalizedSeller = strtolower($sellerLabel);
         $suffix = '-' . $normalizedSeller;
         if ($normalizedBase === $normalizedSeller || substr($normalizedBase, -strlen($suffix)) === $suffix) {
             return $baseLot;
         }
 
-        return $baseLot . '-' . $sellerKey;
+        return $baseLot . '-' . $sellerLabel;
     }
 }
 

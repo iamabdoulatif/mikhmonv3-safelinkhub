@@ -47,13 +47,18 @@ if (mikhmon_comment_base_lot('lot-Ferima', $sellers) !== 'lot') {
     exit(1);
 }
 
-if (mikhmon_comment_assign_seller('lot Ferima', 'ferima', $sellers) !== 'lot-ferima') {
+if (mikhmon_comment_assign_seller('lot Ferima', 'ferima', $sellers) !== 'lot-Ferima') {
     fwrite(STDERR, 'assigning an already tagged display-name lot must not duplicate seller suffix' . PHP_EOL);
     exit(1);
 }
 
-if (mikhmon_comment_assign_seller('lot', 'ferima', $sellers) !== 'lot-ferima') {
-    fwrite(STDERR, 'assigning a plain lot must append the canonical seller key' . PHP_EOL);
+if (mikhmon_comment_assign_seller('lot', 'ferima', $sellers) !== 'lot-Ferima') {
+    fwrite(STDERR, 'assigning a plain lot must append the seller display name' . PHP_EOL);
+    exit(1);
+}
+
+if (mikhmon_comment_seller_key('lot-Ferima', $sellers) !== 'ferima') {
+    fwrite(STDERR, 'display-name lot comments must still match the seller key' . PHP_EOL);
     exit(1);
 }
 

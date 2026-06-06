@@ -9,6 +9,7 @@ $checks = array(
   'generator must read RouterOS system users before building seller options' => strpos($generate, "\$API->comm('/user/print')") !== false,
   'generator must restore RouterOS seller records into sellers_config' => strpos($generate, "mikhmon_replace_assignment_line_in_file(\$appPrefix . 'include/sellers_config.php'") !== false,
   'generated batches must redirect to the generated lot comment' => strpos($generate, "hotspot=users&comment=") !== false && strpos($generate, 'rawurlencode($commt)') !== false,
+  'single ticket generation must also show the generated lot comment' => strpos($generate, 'hotspot-user=" . $u[1]') === false,
   'voucher print must load seller matching helper' => strpos($print, "include/seller_ticket_helper.php") !== false,
   'voucher print must load RouterOS account assignment helper' => strpos($print, "include/hotspot_account_assignment.php") !== false,
   'voucher print must resolve MIKHMON_ACCOUNT comments' => strpos($print, 'mikhmon_hotspot_assignment_from_comment($comment)') !== false,
