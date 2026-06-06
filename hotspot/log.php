@@ -18,6 +18,7 @@
 
 // hide all error
 error_reporting(0);
+include_once(__DIR__ . '/../include/mikhmon_compat.php');
 if (!isset($_SESSION["mikhmon"])) {
 	header("Location:../admin.php?id=login");
 } else {
@@ -52,28 +53,14 @@ if (!isset($_SESSION["mikhmon"])) {
 	<tbody>
 <?php
 for ($i = 0; $i < $TotalReg; $i++) {
-	$mess = explode(":", $log[$i]['message']);
-	$time = $log[$i]['time'];
-	echo "<tr>";
-	if (substr($log[$i]['message'], 0, 2) == "->") {
-		echo "<td>" . $time . "</td>";
-	//echo substr($mess[1], 0,2);
-		echo "<td>";
-		if (count($mess) > 6) {
-			echo $mess[1] . ":" . $mess[2] . ":" . $mess[3] . ":" . $mess[4] . ":" . $mess[5] . ":" . $mess[6];
-		} else {
-			echo $mess[1];
-		}
-		echo "</td>";
-		echo "<td>";
-		if (count($mess) > 6) {
-			echo str_replace("trying to", "", $mess[7] . " " . $mess[8] . " " . $mess[9] . " " . $mess[10]);
-		} else {
-			echo str_replace("trying to", "", $mess[2] . " " . $mess[3] . " " . $mess[4] . " " . $mess[5]);
-		}
-		echo "</td>";
-	} else {
+	$row = mikhmon_hotspot_log_row($log[$i]);
+	if ($row === null) {
+		continue;
 	}
+	echo "<tr>";
+	echo "<td>" . htmlspecialchars($row['time']) . "</td>";
+	echo "<td>" . htmlspecialchars($row['user']) . "</td>";
+	echo "<td>" . htmlspecialchars($row['message']) . "</td>";
 	echo "</tr>";
 }
 ?>

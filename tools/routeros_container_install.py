@@ -123,6 +123,10 @@ def require_done(replies, action):
         raise RuntimeError(f"{action} did not finish cleanly: {replies}")
 
 
+def command_trap_messages(replies):
+    return [sentence_to_dict(s).get("message", str(s)) for s in replies if s and s[0] == "!trap"]
+
+
 def curl_upload(archive, host, user, password, remote_name):
     url = f"ftp://{host}/{remote_name}"
     cmd = [
@@ -149,7 +153,7 @@ def main():
     parser.add_argument("--container-name", default="mikhmon")
     parser.add_argument("--root-dir", default="mikhmon-root")
     parser.add_argument("--interface", help="Optional RouterOS veth interface name for the container.")
-    parser.add_argument("--cmd", help="Optional container command override.")
+    parser.add_argument("--cmd", default="-S 0.0.0.0:80 -t /src/src/", help="Container command arguments for the PHP entrypoint.")
     parser.add_argument("--skip-upload", action="store_true")
     args = parser.parse_args()
 
@@ -188,7 +192,12 @@ def main():
             attrs["cmd"] = args.cmd
 
         print(f"Adding container {args.container_name} from {remote_name}")
-        require_done(ros.command("/container/add", **attrs), "/container/add")
+        add_replies = ros.command("/container/add", **attrs)
+        traps = command_trap_messages(add_replies)
+        if any("unknown parameter name" in trap for trap in traps):
+            attrs.pop("name", None)
+            add_replies = ros.command("/container/add", **attrs)
+        require_done(add_replies, "/container/add")
 
         containers = ros.command("/container/print", **{"?name": args.container_name})
         container_id = None

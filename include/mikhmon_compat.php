@@ -25,7 +25,7 @@ if (!function_exists('mikhmon_month_map')) {
 
   function mikhmon_hotspot_fast_generate_threshold()
   {
-    return 20;
+    return mikhmon_generate_ticket_limit() + 1;
   }
 
   function mikhmon_hotspot_fast_generate_chunk_size()
@@ -912,11 +912,180 @@ if (!function_exists('mikhmon_month_map')) {
     );
   }
 
+  function mikhmon_routeros_duration_seconds($duration)
+  {
+    $duration = strtolower(trim((string) $duration));
+    if ($duration === '' || $duration === '0') {
+      return 0;
+    }
+
+    if (preg_match('/^(\d{1,2}):(\d{2}):(\d{2})$/', $duration, $matches)) {
+      return ((int) $matches[1] * 3600) + ((int) $matches[2] * 60) + (int) $matches[3];
+    }
+
+    if (!preg_match_all('/(\d+)([wdhms])/', $duration, $matches, PREG_SET_ORDER)) {
+      return 0;
+    }
+
+    $seconds = 0;
+    foreach ($matches as $match) {
+      $value = (int) $match[1];
+      if ($match[2] === 'w') $seconds += $value * 604800;
+      if ($match[2] === 'd') $seconds += $value * 86400;
+      if ($match[2] === 'h') $seconds += $value * 3600;
+      if ($match[2] === 'm') $seconds += $value * 60;
+      if ($match[2] === 's') $seconds += $value;
+    }
+
+    return $seconds;
+  }
+
+  function mikhmon_expiration_comment_datetime($comment)
+  {
+    $comment = trim((string) $comment);
+    if ($comment === '') {
+      return null;
+    }
+
+    if (preg_match('/^([a-z]{3})\/(\d{2})\/(\d{4})(?:\s+(\d{2}:\d{2}:\d{2}))?$/i', $comment, $matches)) {
+      $months = array_flip(mikhmon_month_map());
+      $month = strtolower($matches[1]);
+      if (!isset($months[$month])) {
+        return null;
+      }
+      $time = isset($matches[4]) && $matches[4] !== '' ? $matches[4] : '00:00:00';
+      return DateTime::createFromFormat('!Y-m-d H:i:s', $matches[3] . '-' . $months[$month] . '-' . $matches[2] . ' ' . $time);
+    }
+
+    if (preg_match('/^(\d{4})-(\d{2})-(\d{2})(?:\s+(\d{2}:\d{2}:\d{2}))?$/', $comment, $matches)) {
+      $time = isset($matches[4]) && $matches[4] !== '' ? $matches[4] : '00:00:00';
+      return DateTime::createFromFormat('!Y-m-d H:i:s', $matches[1] . '-' . $matches[2] . '-' . $matches[3] . ' ' . $time);
+    }
+
+    return null;
+  }
+
+  function mikhmon_profile_income_meta_from_on_login($onLogin)
+  {
+    $parts = explode(',', (string) $onLogin);
+    $price = isset($parts[4]) && trim($parts[4]) !== '' && trim($parts[4]) !== '0'
+      ? trim($parts[4])
+      : (isset($parts[2]) ? trim($parts[2]) : '0');
+
+    return array(
+      'price' => mikhmon_parse_money_amount($price),
+      'validity' => isset($parts[3]) ? trim($parts[3]) : '',
+    );
+  }
+
+  function mikhmon_income_summary_from_used_hotspot_users($API, $dayKey)
+  {
+    $dayKey = mikhmon_normalize_sale_date($dayKey);
+    $dayIso = mikhmon_iso_date_from_day_key($dayKey);
+    $monthKey = mikhmon_sale_month_key($dayKey);
+    $summary = array(
+      'today_count' => 0,
+      'today_total' => 0.0,
+      'month_count' => 0,
+      'month_total' => 0.0,
+    );
+    if ($dayIso === '' || $monthKey === '') {
+      return $summary;
+    }
+
+    $profileRows = $API->comm('/ip/hotspot/user/profile/print', array('.proplist' => 'name,on-login'));
+    $profiles = array();
+    if (is_array($profileRows)) {
+      foreach ($profileRows as $profileRow) {
+        $profileName = isset($profileRow['name']) ? trim((string) $profileRow['name']) : '';
+        if ($profileName === '') {
+          continue;
+        }
+        $meta = mikhmon_profile_income_meta_from_on_login(isset($profileRow['on-login']) ? $profileRow['on-login'] : '');
+        $meta['validity_seconds'] = mikhmon_routeros_duration_seconds($meta['validity']);
+        if ($meta['price'] > 0 && $meta['validity_seconds'] > 0) {
+          $profiles[$profileName] = $meta;
+        }
+      }
+    }
+    if (empty($profiles)) {
+      return $summary;
+    }
+
+    $userRows = $API->comm('/ip/hotspot/user/print', array('.proplist' => 'name,profile,comment'));
+    if (!is_array($userRows)) {
+      return $summary;
+    }
+
+    foreach ($userRows as $userRow) {
+      $profileName = isset($userRow['profile']) ? trim((string) $userRow['profile']) : '';
+      if ($profileName === '' || !isset($profiles[$profileName])) {
+        continue;
+      }
+
+      $expiresAt = mikhmon_expiration_comment_datetime(isset($userRow['comment']) ? $userRow['comment'] : '');
+      if (!$expiresAt) {
+        continue;
+      }
+
+      $soldAt = clone $expiresAt;
+      $soldAt->modify('-' . (int) $profiles[$profileName]['validity_seconds'] . ' seconds');
+      $saleIso = $soldAt->format('Y-m-d');
+      $saleDay = mikhmon_normalize_sale_date($saleIso);
+      $saleMonth = mikhmon_sale_month_key($saleDay);
+      if ($saleMonth !== $monthKey) {
+        continue;
+      }
+
+      $summary['month_count']++;
+      $summary['month_total'] += $profiles[$profileName]['price'];
+
+      if ($saleIso === $dayIso) {
+        $summary['today_count']++;
+        $summary['today_total'] += $profiles[$profileName]['price'];
+      }
+    }
+
+    return $summary;
+  }
+
+  function mikhmon_income_summary_has_values($summary)
+  {
+    return is_array($summary)
+      && ((int) $summary['today_count'] > 0
+        || (float) $summary['today_total'] > 0
+        || (int) $summary['month_count'] > 0
+        || (float) $summary['month_total'] > 0);
+  }
+
   function mikhmon_dashboard_income_summary($API, $dayKey)
   {
     $dayKey = mikhmon_normalize_sale_date($dayKey);
     mikhmon_ensure_income_counter_scheduler($API);
-    return mikhmon_income_summary_from_counter_files($API, $dayKey);
+    $counterSummary = mikhmon_income_summary_from_counter_files($API, $dayKey);
+    if (mikhmon_income_summary_has_values($counterSummary)) {
+      if ((int) $counterSummary['today_count'] === 0 && (float) $counterSummary['today_total'] == 0.0) {
+        $fallbackSummary = mikhmon_income_summary_from_used_hotspot_users($API, $dayKey);
+        if ((int) $fallbackSummary['today_count'] > 0 || (float) $fallbackSummary['today_total'] > 0.0) {
+          $counterSummary['today_count'] = $fallbackSummary['today_count'];
+          $counterSummary['today_total'] = $fallbackSummary['today_total'];
+        }
+        if ((int) $counterSummary['month_count'] === 0 && (float) $counterSummary['month_total'] == 0.0
+            && mikhmon_income_summary_has_values($fallbackSummary)) {
+          $counterSummary['month_count'] = $fallbackSummary['month_count'];
+          $counterSummary['month_total'] = $fallbackSummary['month_total'];
+        }
+      }
+      return $counterSummary;
+    }
+
+    $monthKey = mikhmon_sale_month_key($dayKey);
+    $scriptSummary = mikhmon_income_summary_from_scripts(mikhmon_fetch_sales_by_month($API, $monthKey), $dayKey, $monthKey);
+    if (mikhmon_income_summary_has_values($scriptSummary)) {
+      return $scriptSummary;
+    }
+
+    return mikhmon_income_summary_from_used_hotspot_users($API, $dayKey);
   }
 
   function mikhmon_income_counter_scheduler_source()
@@ -1213,6 +1382,100 @@ if (!function_exists('mikhmon_month_map')) {
     }
 
     return $updated;
+  }
+
+  function mikhmon_ensure_expiration_profile_monitors($API)
+  {
+    $profiles = $API->comm('/ip/hotspot/user/profile/print', array(
+      '.proplist' => '.id,name,on-login',
+    ));
+    if (!is_array($profiles)) {
+      return 0;
+    }
+
+    $ensured = 0;
+    foreach ($profiles as $profile) {
+      $profileName = isset($profile['name']) ? trim((string) $profile['name']) : '';
+      $onLogin = isset($profile['on-login']) ? (string) $profile['on-login'] : '';
+      if ($profileName === '' || !preg_match('/^[A-Za-z0-9_.-]+$/', $profileName)) {
+        continue;
+      }
+
+      $parts = explode(',', $onLogin);
+      $expireMode = isset($parts[1]) ? trim($parts[1]) : '';
+      $validity = mikhmon_normalize_routeros_duration(isset($parts[3]) ? $parts[3] : '');
+      if (!in_array($expireMode, array('rem', 'ntf', 'remc', 'ntfc'), true) || $validity === '') {
+        continue;
+      }
+
+      $monitorMode = ($expireMode === 'ntf' || $expireMode === 'ntfc')
+        ? 'set limit-uptime=1s'
+        : 'remove';
+      $monitor = mikhmon_build_expire_monitor_script($profileName, $monitorMode);
+      $schedulers = $API->comm('/system/scheduler/print', array(
+        '?name' => $profileName,
+        '.proplist' => '.id,name,interval,on-event,disabled,comment',
+      ));
+      $schedulerPayload = array(
+        'name' => $profileName,
+        'start-time' => '00:00:05',
+        'interval' => '00:00:30',
+        'on-event' => $monitor,
+        'disabled' => 'no',
+        'comment' => 'Monitor Profile ' . $profileName,
+      );
+
+      if (is_array($schedulers) && !empty($schedulers[0]['.id'])) {
+        $disabled = isset($schedulers[0]['disabled']) ? strtolower((string) $schedulers[0]['disabled']) : '';
+        if (isset($schedulers[0]['interval'], $schedulers[0]['on-event'], $schedulers[0]['comment'])
+            && mikhmon_routeros_duration_seconds($schedulers[0]['interval']) === mikhmon_routeros_duration_seconds('00:00:30')
+            && $schedulers[0]['on-event'] === $monitor
+            && $schedulers[0]['comment'] === 'Monitor Profile ' . $profileName
+            && ($disabled === 'false' || $disabled === 'no')) {
+          continue;
+        }
+        $schedulerPayload['.id'] = $schedulers[0]['.id'];
+        $API->comm('/system/scheduler/set', $schedulerPayload);
+      } else {
+        $API->comm('/system/scheduler/add', $schedulerPayload);
+      }
+      $ensured++;
+    }
+
+    return $ensured;
+  }
+
+  function mikhmon_hotspot_log_row($entry)
+  {
+    if (!is_array($entry)) {
+      return null;
+    }
+    $message = isset($entry['message']) ? trim((string) $entry['message']) : '';
+    if ($message === '') {
+      return null;
+    }
+
+    if (substr($message, 0, 3) === '->:') {
+      $message = trim(substr($message, 3));
+    }
+
+    $user = '';
+    $detail = '';
+    if (preg_match('/^(.+?\([^)]+\)):\s*(.*)$/', $message, $matches)) {
+      $user = trim($matches[1]);
+      $detail = trim($matches[2]);
+    } elseif (preg_match('/^([^:]+):\s*(.*)$/', $message, $matches)) {
+      $user = trim($matches[1]);
+      $detail = trim($matches[2]);
+    } else {
+      $detail = $message;
+    }
+
+    return array(
+      'time' => isset($entry['time']) ? (string) $entry['time'] : '',
+      'user' => $user,
+      'message' => trim(str_replace('trying to', '', $detail)),
+    );
   }
 
   function mikhmon_build_expire_monitor_script($profileName, $mode)

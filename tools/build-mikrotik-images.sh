@@ -2,15 +2,15 @@
 # Build flattened Mikhmon RouterOS container archives for MikroTik ARM targets.
 #
 # Targets:
-#   linux/arm/v7 -> hAP ax lite / ARM32 RouterOS container package
-#   linux/arm64  -> hAP ax2 / ARM64 RouterOS container package
+#   linux/arm/v7 -> RB4011 / RB3011 / ARMv7 RouterOS container package
+#   linux/arm64  -> hAP ax2 / Chateau Pro / ARM64 RouterOS container package
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 OUT="$PROJECT_DIR/docker-output"
-DOCKERFILE="$OUT/Dockerfile.fixed-slim"
+DOCKERFILE="${DOCKERFILE:-$PROJECT_DIR/Dockerfile.mikrotik}"
 REPO="${REPO:-local/mikhmonv3-safelinkhub}"
 BUILDER="${BUILDER:-safelink-builder}"
 STAMP="${BUILD_STAMP:-$(date -u +%Y%m%d%H%M%S)}"
@@ -121,8 +121,8 @@ info "Sortie: $OUT"
 build_image "linux/arm64" "$BASE_ARM64"
 build_image "linux/arm/v7" "$BASE_ARMV7"
 
-flatten_image "linux/arm64" "$BASE_ARM64" "$FLAT_ARM64" "hap-ax2" "arm64"
-flatten_image "linux/arm/v7" "$BASE_ARMV7" "$FLAT_ARMV7" "hap-ax-lite" "arm32/armv7"
+flatten_image "linux/arm64" "$BASE_ARM64" "$FLAT_ARM64" "hap-ax2-chateau-pro" "arm64"
+flatten_image "linux/arm/v7" "$BASE_ARMV7" "$FLAT_ARMV7" "rb4011-rb3011" "arm32/armv7"
 
 export_archive "arm64" "" "$FLAT_ARM64" "$OUT_ARM64" "mikhmon-flat:arm64"
 export_archive "arm" "v7" "$FLAT_ARMV7" "$OUT_ARMV7" "mikhmon-flat:armv7"

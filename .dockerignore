@@ -14,6 +14,10 @@ logs/*
 !logs/index.php
 process/fraud_api_key.txt
 include/secret.key.php
+include/config.php
+include/sellers_config.php
+include/managers_config.php
+voucher/temp.php
 backups
 *.tar
 *.tar.gz

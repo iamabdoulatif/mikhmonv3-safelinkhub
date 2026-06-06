@@ -35,6 +35,7 @@ if (!isset($_SESSION["mikhmon"])) {
   $clockDisplay = mikhmon_router_clock_display($clock, $timezone);
   $clockDayKey = mikhmon_router_clock_day_key($clock, $timezone);
   mikhmon_upgrade_legacy_expiration_profiles($API);
+  mikhmon_ensure_expiration_profile_monitors($API);
 
 // get system resource MikroTik
   $getresource = $API->comm("/system/resource/print");

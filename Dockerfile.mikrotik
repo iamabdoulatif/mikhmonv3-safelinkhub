@@ -1,4 +1,4 @@
-FROM alpine:3.15
+FROM --platform=$TARGETPLATFORM php:7.4-cli-alpine3.16
 
 ARG TARGETPLATFORM
 ARG BUILD_VERSION=dev
@@ -9,6 +9,7 @@ LABEL org.opencontainers.image.title="mikhmonv3-safelinkhub"
 LABEL org.opencontainers.image.description="Mikhmon V3 SafelinkHub for MikroTik RouterOS containers"
 LABEL org.opencontainers.image.version="${BUILD_VERSION}"
 LABEL org.opencontainers.image.revision="${BUILD_STAMP}"
+LABEL mikrotik.compatibility="arm32,armv7,arm64,rb4011,rb3011,hap-ax2,chateau-pro"
 
 ENV MIKHMON_BUILD_VERSION="${BUILD_VERSION}"
 ENV MIKHMON_BUILD_STAMP="${BUILD_STAMP}"
@@ -17,39 +18,21 @@ ENV PHP_CLI_SERVER_WORKERS="4"
 
 WORKDIR /src
 
-RUN apk add --no-cache \
-      php7 \
-      php7-ctype \
-      php7-curl \
-      php7-dom \
-      php7-fileinfo \
-      php7-ftp \
-      php7-iconv \
-      php7-json \
-      php7-mbstring \
-      php7-openssl \
-      php7-pdo_sqlite \
-      php7-phar \
-      php7-posix \
-      php7-session \
-      php7-simplexml \
-      php7-sockets \
-      php7-sodium \
-      php7-sqlite3 \
-      php7-tokenizer \
-      php7-xml \
-      php7-xmlreader \
-      php7-xmlwriter \
-      php7-zip \
-      php7-zlib \
-      tzdata \
-    && ln -sf /usr/bin/php7 /usr/bin/php \
-    && mkdir -p /usr/local/share/mikhmon \
-    && dd if=/dev/urandom of=/usr/local/share/mikhmon/runtime-size-pad.bin bs=1024 count=1280 2>/dev/null
-
 COPY . /src/src/
 
 RUN rm -rf \
+      /usr/local/bin/phpdbg \
+      /usr/local/bin/php-cgi \
+      /usr/local/bin/phpize \
+      /usr/local/bin/php-config \
+      /usr/local/bin/pear \
+      /usr/local/bin/pecl \
+      /usr/local/bin/peardev \
+      /usr/local/bin/docker-php-* \
+      /usr/local/include \
+      /usr/local/lib/php/build \
+      /usr/local/php/man \
+      /usr/src/php.tar.xz \
       /tmp/* \
       /var/cache/apk/* \
       /src/src/tools \
@@ -69,10 +52,14 @@ RUN rm -rf \
       /src/src/css/font-awesome/scss \
       /src/src/wireguard-configs/* \
     && mkdir -p /src/src/logs /src/src/img /src/src/wireguard-configs \
+    && printf '%s\n' '<?php ' 'if (isset($_SERVER["REQUEST_URI"]) && substr($_SERVER["REQUEST_URI"], -10) == "config.php") {' '  header("Location:./");' '  exit;' '}' '$data["mikhmon"] = array ("1"=>"mikhmon<|<mikhmon","2"=>"mikhmon>|>aWNlbA==");' > /src/src/include/config.php \
+    && printf '%s\n' '<?php' 'if (isset($_SERVER["REQUEST_URI"]) && substr($_SERVER["REQUEST_URI"], -19) == "sellers_config.php") {' '  header("Location:./");' '  exit;' '}' '$sellers_data = array();' > /src/src/include/sellers_config.php \
+    && printf '%s\n' '<?php' 'if (isset($_SERVER["REQUEST_URI"]) && substr($_SERVER["REQUEST_URI"], -20) == "managers_config.php") {' '  header("Location:./");' '  exit;' '}' '$managers_data = array();' > /src/src/include/managers_config.php \
     && printf '{"version":"%s","stamp":"%s","image":"%s"}\n' "$BUILD_VERSION" "$BUILD_STAMP" "$IMAGE_NAME" > /src/src/build-info.json \
     && touch /src/src/logs/index.php \
     && find /src/src -type d -exec chmod 755 {} + \
-    && find /src/src -type f -exec chmod 644 {} +
+    && find /src/src -type f -exec chmod 644 {} + \
+    && chown -R www-data:www-data /src/src/logs /src/src/img /src/src/wireguard-configs
 
 EXPOSE 80
 

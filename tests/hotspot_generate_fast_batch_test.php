@@ -21,9 +21,9 @@ $compat = file_get_contents($root . '/include/mikhmon_compat.php');
 $generator = file_get_contents($root . '/hotspot/generateuser.php');
 
 assert_matches_text(
-    '/function\s+mikhmon_hotspot_fast_generate_threshold\s*\(\)\s*\{[^}]*return\s+20\s*;/s',
+    '/function\s+mikhmon_hotspot_fast_generate_threshold\s*\(\)\s*\{[^}]*return\s+mikhmon_generate_ticket_limit\(\)\s*\+\s*1\s*;/s',
     $compat,
-    'Le seuil du mode rapide doit etre centralise a 20 tickets.'
+    'Le mode rapide par script RouterOS doit etre desactive par defaut: le chemin direct est le seul fiable pour ecrire les vouchers.'
 );
 
 assert_matches_text(
@@ -90,6 +90,24 @@ assert_contains_text(
     $generator,
     'array_slice($users, $chunkIndex * $chunkSize)',
     'Si un morceau batch echoue, le generateur doit reprendre seulement les utilisateurs restants en mode unitaire.'
+);
+
+assert_contains_text(
+    $generator,
+    'function mikhmon_hotspot_reconcile_generated_users',
+    'Apres generation, le generateur doit verifier les tickets reellement crees sur RouterOS.'
+);
+
+assert_contains_text(
+    $generator,
+    'mikhmon_hotspot_reconcile_generated_users($API, $batchUsers, $server, $profile, $timelimit, $datalimit, $commt)',
+    'Le flux principal doit reconcilier les tickets manquants ou mal commentes apres le chemin rapide/lent.'
+);
+
+assert_contains_text(
+    $generator,
+    '"/ip/hotspot/user/set"',
+    'La reconciliation doit pouvoir corriger le commentaire dun ticket deja cree.'
 );
 
 if (substr_count($generator, '"/ip/hotspot/user/add"') + substr_count($generator, "'/ip/hotspot/user/add'") !== 1) {

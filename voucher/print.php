@@ -53,6 +53,8 @@ if (!isset($_SESSION["mikhmon"]) && empty($_SESSION['seller_username']) && empty
     }
     exit;
   }
+  include('../include/lang.php');
+  include('../lang/' . $langid . '.php');
   include_once('../include/sellers_config.php');
   include_once('../include/seller_ticket_helper.php');
   include_once('../include/hotspot_account_assignment.php');

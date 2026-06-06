@@ -153,6 +153,44 @@ if (!function_exists('mikhmon_hotspot_user_add_payload')) {
 		return true;
 	}
 
+	function mikhmon_hotspot_find_generated_user($API, $name)
+	{
+		$rows = $API->comm('/ip/hotspot/user/print', array(
+			'?name' => (string) $name,
+			'.proplist' => '.id,name,comment',
+		));
+
+		if (mikhmon_routeros_response_error($rows) !== '' || !is_array($rows)) {
+			return array();
+		}
+
+		foreach ($rows as $row) {
+			if (is_array($row) && isset($row['name']) && (string) $row['name'] === (string) $name) {
+				return $row;
+			}
+		}
+
+		return array();
+	}
+
+	function mikhmon_hotspot_reconcile_generated_users($API, $users, $server, $profile, $timelimit, $datalimit, $comment)
+	{
+		foreach ($users as $user) {
+			$existing = mikhmon_hotspot_find_generated_user($API, $user['name']);
+			if (empty($existing)) {
+				mikhmon_hotspot_add_users_slow($API, array($user), $server, $profile, $timelimit, $datalimit, $comment);
+				$existing = mikhmon_hotspot_find_generated_user($API, $user['name']);
+			}
+
+			if (!empty($existing) && isset($existing['.id']) && (!isset($existing['comment']) || (string) $existing['comment'] !== (string) $comment)) {
+				$API->comm("/ip/hotspot/user/set", array(
+					".id" => $existing['.id'],
+					"comment" => (string) $comment,
+				));
+			}
+		}
+	}
+
 	function mikhmon_hotspot_existing_user_name_map($API)
 	{
 		$names = array();
@@ -464,7 +502,7 @@ if (!isset($_SESSION["mikhmon"]) && empty($_SESSION['manager_username'])) {
 			$getsprice = explode(",", $ponlogin)[4];
 			$getlock = explode(",", $ponlogin)[6];
 			$_SESSION['ubp'] = $profile;
-				$commt = $user . "-" . rand(100, 999) . "-" . date("m.d.y");
+				$commt = $user . "-" . rand(100, 999) . "-" . date("m.d.y") . "-" . $profile;
 				if ($adcomment != "") {
 					$commt .= "-" . $adcomment;
 				}
@@ -489,6 +527,7 @@ if (!isset($_SESSION["mikhmon"]) && empty($_SESSION['manager_username'])) {
 			if (!$addedFast) {
 				mikhmon_hotspot_add_users_slow($API, $batchUsers, $server, $profile, $timelimit, $datalimit, $commt);
 			}
+			mikhmon_hotspot_reconcile_generated_users($API, $batchUsers, $server, $profile, $timelimit, $datalimit, $commt);
 
 
 			if (!$isStandaloneGenerator) {
