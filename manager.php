@@ -210,10 +210,9 @@ if ($manager_logged_in) {
         // ── Stats par vendeur ────────────────────────────────────────────────
         $today_str = mikhmon_normalize_sale_date(date("Y-m-d"));
         foreach ($allSales as $sale) {
-            $rawComment = strtolower(trim($sale['comment']));
+            $matchedSeller = mikhmon_comment_seller_key(isset($sale['comment']) ? $sale['comment'] : '', $managerSellersData);
             foreach ($managerSellersData as $sk => $sd) {
-                $sfx = '-' . strtolower($sk);
-                if ($rawComment === strtolower($sk) || substr($rawComment, -strlen($sfx)) === $sfx) {
+                if ($matchedSeller === $sk) {
                     if (!isset($sellerStats[$sk])) {
                         $sellerStats[$sk] = array('total' => 0, 'today' => 0, 'rev_total' => 0.0, 'rev_today' => 0.0, 'profiles' => array());
                     }

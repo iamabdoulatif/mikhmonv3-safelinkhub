@@ -369,6 +369,7 @@ if (!isset($_SESSION["mikhmon"]) && empty($_SESSION['manager_username'])) {
 
 	$srvlist = $API->comm("/ip/hotspot/print");
 	include_once($appPrefix . 'include/sellers_config.php');
+	include_once($appPrefix . 'include/seller_ticket_helper.php');
 	$sessionSellers = array();
 	$generationError = '';
 	$maxGenerateQty = mikhmon_generate_ticket_limit();
@@ -423,13 +424,7 @@ if (!isset($_SESSION["mikhmon"]) && empty($_SESSION['manager_username'])) {
 			}
 			if ($generationError === '') {
 				if ($sellerId != "") {
-					$sellerSuffix = "-" . strtolower($sellerId);
-					$normalizedComment = strtolower($adcomment);
-					if ($adcomment == "") {
-						$adcomment = $sellerId;
-					} elseif ($normalizedComment !== strtolower($sellerId) && substr($normalizedComment, -strlen($sellerSuffix)) !== $sellerSuffix) {
-						$adcomment .= "-" . $sellerId;
-					}
+					$adcomment = mikhmon_comment_assign_seller($adcomment, $sellerId, $sessionSellers);
 				}
 			$getprofile = $API->comm("/ip/hotspot/user/profile/print", array("?name" => "$profile"));
 			$ponlogin = $getprofile[0]['on-login'];

@@ -133,13 +133,8 @@ if ($seller_logged_in) {
         }
 
         // Filtrer uniquement les ventes du vendeur connecté
-        // Le commentaire du voucher doit se terminer par le nom du vendeur
-        // (ex: "up-123-05.05.26-alpha" → dernière partie = "alpha")
         foreach ($allSales as $sale) {
-            $comment   = strtolower(trim($sale['comment']));
-            $sellerKey = strtolower($sellerUsername);
-            $suffix    = '-' . $sellerKey;
-            if ($comment === $sellerKey || substr($comment, -strlen($suffix)) === $suffix) {
+            if (mikhmon_comment_seller_key(isset($sale['comment']) ? $sale['comment'] : '', $sellers_data) === $sellerUsername) {
                 $getData[] = $sale;
             }
         }
@@ -191,11 +186,8 @@ $sellerStockUsers = array(); // tous les utilisateurs non utilisés du vendeur
 if ($seller_logged_in && isset($API)) {
     $unusedAll = $API->comm("/ip/hotspot/user/print", array("?uptime" => "0s"));
     if (is_array($unusedAll)) {
-        $sellerKey = strtolower($sellerUsername);
-        $sfxKey    = '-' . $sellerKey;
         foreach ($unusedAll as $u) {
-            $cmt = strtolower(trim(isset($u['comment']) ? $u['comment'] : ''));
-            if ($cmt === $sellerKey || substr($cmt, -strlen($sfxKey)) === $sfxKey) {
+            if (mikhmon_comment_seller_key(isset($u['comment']) ? $u['comment'] : '', $sellers_data) === $sellerUsername) {
                 $prof = isset($u['profile']) ? $u['profile'] : '(unknown)';
                 if (!isset($sellerStock[$prof])) $sellerStock[$prof] = 0;
                 $sellerStock[$prof]++;
@@ -402,17 +394,12 @@ if ($seller_logged_in && isset($API)) {
         $unusedAllSellers = $API->comm("/ip/hotspot/user/print", ["?uptime" => "0s"]);
         if (is_array($unusedAllSellers)) {
             foreach ($unusedAllSellers as $u) {
-                $cmt = strtolower(trim(isset($u['comment']) ? $u['comment'] : ''));
-                foreach ($allSellersStock as $sk => &$sdata) {
-                    $sfx = '-' . strtolower($sk);
-                    if ($cmt === strtolower($sk) || substr($cmt, -strlen($sfx)) === $sfx) {
-                        $prof = isset($u['profile']) ? $u['profile'] : '(unknown)';
-                        if (!isset($sdata['stock'][$prof])) $sdata['stock'][$prof] = 0;
-                        $sdata['stock'][$prof]++;
-                        break;
-                    }
+                $matchedSeller = mikhmon_comment_seller_key(isset($u['comment']) ? $u['comment'] : '', $sellers_data);
+                if ($matchedSeller !== '' && isset($allSellersStock[$matchedSeller])) {
+                    $prof = isset($u['profile']) ? $u['profile'] : '(unknown)';
+                    if (!isset($allSellersStock[$matchedSeller]['stock'][$prof])) $allSellersStock[$matchedSeller]['stock'][$prof] = 0;
+                    $allSellersStock[$matchedSeller]['stock'][$prof]++;
                 }
-                unset($sdata);
             }
         }
     }
@@ -1323,11 +1310,8 @@ $unusedTickets = array();
 if ($seller_router_connected) {
     $allUsers = $API->comm("/ip/hotspot/user/print");
     if (is_array($allUsers)) {
-        $sellerKey = strtolower($sellerUsername);
-        $sfxKey    = '-' . $sellerKey;
         foreach ($allUsers as $u) {
-            $cmt = strtolower(trim(isset($u['comment']) ? $u['comment'] : ''));
-            if ($cmt === $sellerKey || substr($cmt, -strlen($sfxKey)) === $sfxKey) {
+            if (mikhmon_comment_seller_key(isset($u['comment']) ? $u['comment'] : '', $sellers_data) === $sellerUsername) {
                 $uptime = isset($u['uptime']) ? $u['uptime'] : '0s';
                 if ($uptime === '0s' || $uptime === '') {
                     $unusedTickets[] = $u;

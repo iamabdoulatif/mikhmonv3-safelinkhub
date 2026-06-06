@@ -1,21 +1,83 @@
 <?php
 
 if (!function_exists('mikhmon_comment_seller_key')) {
-    function mikhmon_comment_seller_key($comment, $sellersData) {
-        $normalizedComment = strtolower(trim((string)$comment));
-        if ($normalizedComment === '' || !is_array($sellersData)) {
+    function mikhmon_comment_seller_aliases($sellerKey, $sellerData) {
+        $aliases = array();
+        $sellerKey = trim((string)$sellerKey);
+        if ($sellerKey !== '') {
+            $aliases[] = $sellerKey;
+        }
+        if (is_array($sellerData) && isset($sellerData['name'])) {
+            $sellerName = trim((string)$sellerData['name']);
+            if ($sellerName !== '') {
+                $aliases[] = $sellerName;
+            }
+        }
+
+        $out = array();
+        $seen = array();
+        foreach ($aliases as $alias) {
+            $key = strtolower(preg_replace('/\s+/', ' ', trim((string)$alias)));
+            if ($key === '' || isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $out[] = trim((string)$alias);
+        }
+
+        return $out;
+    }
+
+    function mikhmon_comment_alias_tail_regex($alias) {
+        $parts = preg_split('/[\s_-]+/', strtolower(trim((string)$alias)));
+        $cleanParts = array();
+        foreach ($parts as $part) {
+            $part = trim($part);
+            if ($part !== '') {
+                $cleanParts[] = preg_quote($part, '/');
+            }
+        }
+        if (empty($cleanParts)) {
             return '';
         }
 
-        foreach ($sellersData as $sellerKey => $sellerData) {
-            $normalizedSeller = strtolower(trim((string)$sellerKey));
-            if ($normalizedSeller === '') {
-                continue;
-            }
+        return '/(?:^|[\s_-])' . implode('[\s_-]+', $cleanParts) . '$/i';
+    }
 
-            $suffix = '-' . $normalizedSeller;
-            if ($normalizedComment === $normalizedSeller || substr($normalizedComment, -strlen($suffix)) === $suffix) {
-                return $sellerKey;
+    function mikhmon_comment_matches_seller_alias($comment, $alias) {
+        $comment = preg_replace('/\s+/', ' ', trim((string)$comment));
+        $alias = preg_replace('/\s+/', ' ', trim((string)$alias));
+        if ($comment === '' || $alias === '') {
+            return false;
+        }
+
+        if (strcasecmp($comment, $alias) === 0) {
+            return true;
+        }
+
+        $regex = mikhmon_comment_alias_tail_regex($alias);
+        return $regex !== '' && preg_match($regex, $comment) === 1;
+    }
+
+    function mikhmon_comment_seller_key($comment, $sellersData) {
+        $comment = trim((string)$comment);
+        if ($comment === '' || !is_array($sellersData)) {
+            return '';
+        }
+
+        if (preg_match('/MIKHMON_ACCOUNT\s+role=([^\s|]+)\s+session=([^\s|]+)\s+account=([^\s|]+)/i', $comment, $matches)) {
+            $role = strtolower(trim($matches[1]));
+            $account = preg_replace('/[^a-zA-Z0-9_]/', '', trim($matches[3]));
+            if (($role === 'seller' || $role === 'vendeur') && $account !== '' && isset($sellersData[$account])) {
+                return $account;
+            }
+        }
+
+        foreach ($sellersData as $sellerKey => $sellerData) {
+            foreach (mikhmon_comment_seller_aliases($sellerKey, $sellerData) as $alias) {
+                if (mikhmon_comment_matches_seller_alias($comment, $alias)) {
+                    return $sellerKey;
+                }
             }
         }
 
@@ -35,13 +97,14 @@ if (!function_exists('mikhmon_comment_base_lot')) {
             return $comment;
         }
 
-        if (strcasecmp($comment, $sellerKey) === 0) {
-            return '';
-        }
-
-        $suffix = '-' . $sellerKey;
-        if (strlen($comment) > strlen($suffix) && strcasecmp(substr($comment, -strlen($suffix)), $suffix) === 0) {
-            return substr($comment, 0, -strlen($suffix));
+        foreach (mikhmon_comment_seller_aliases($sellerKey, $sellersData[$sellerKey]) as $alias) {
+            if (strcasecmp($comment, $alias) === 0) {
+                return '';
+            }
+            $regex = mikhmon_comment_alias_tail_regex($alias);
+            if ($regex !== '' && preg_match($regex, $comment) === 1) {
+                return rtrim(preg_replace($regex, '', $comment), "-_ \t\n\r\0\x0B");
+            }
         }
 
         return $comment;
