@@ -53,7 +53,12 @@ if (!isset($_SESSION["mikhmon"])) {
     $suserhost = ($_POST['usermik']);
     $postedPassmik = isset($_POST['passmik']) ? trim((string) $_POST['passmik']) : '';
     if ($postedPassmik === '' && !empty($passwdhost)) {
-      $spasswdhost = $passwdhost;
+      $currentPassmik = decrypt($passwdhost);
+      if ($currentPassmik !== '' && strpos((string) $passwdhost, 'v2:') === 0 && function_exists('mikhmon_legacy_encrypt')) {
+        $spasswdhost = mikhmon_legacy_encrypt($currentPassmik);
+      } else {
+        $spasswdhost = $passwdhost;
+      }
     } else {
       $spasswdhost = function_exists('mikhmon_legacy_encrypt') ? mikhmon_legacy_encrypt($postedPassmik) : encrypt($postedPassmik);
     }
@@ -101,6 +106,9 @@ if (!isset($_SESSION["mikhmon"])) {
     echo "<script>window.location='./admin.php?id=settings&session=" . $session . "'</script>";
   }
 }
+  $mikrotikPasswordValue = !empty($passwdhost) ? decrypt($passwdhost) : '';
+  $mikrotikPasswordSaved = !$isNewRouterDraft && !empty($passwdhost);
+  $mikrotikPasswordPlaceholder = ($mikrotikPasswordSaved && $mikrotikPasswordValue === '') ? 'Mot de passe enregistré - laissez vide pour conserver' : '';
 ?>
 <script>
   function PassMk(){
@@ -178,7 +186,7 @@ if (!isset($_SESSION["mikhmon"])) {
 						<td class="align-middle">Password  </td><td>
 							<div class="input-group">
 								<div class="input-group-11 col-box-10">
-        						<input class="group-item group-item-l" id="passmk" type="password" name="passmik" title="Password MikroTik" value="<?= decrypt($passwdhost); ?>" required="1"/>
+										<input class="group-item group-item-l" id="passmk" type="password" name="passmik" title="Password MikroTik" value="<?= htmlspecialchars($mikrotikPasswordValue, ENT_QUOTES, 'UTF-8'); ?>" placeholder="<?= htmlspecialchars($mikrotikPasswordPlaceholder, ENT_QUOTES, 'UTF-8'); ?>" required="1"/>
         						</div>
             					<div class="input-group-1 col-box-2">
             						<div class="group-item group-item-r pd-2p5 text-center align-middle">
