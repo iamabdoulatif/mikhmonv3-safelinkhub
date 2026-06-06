@@ -281,7 +281,7 @@ if (!function_exists('mikhmon_hotspot_account_key')) {
     return mikhmon_hotspot_assignment_base_comment($comment);
   }
 
-  function mikhmon_hotspot_clear_account_footprints($api, $hotspotUsers, $ipBindings, $session, $role, $accountKey, $routerUsers = array())
+  function mikhmon_hotspot_clear_account_footprints($api, $hotspotUsers, $ipBindings, $session, $role, $accountKey, $routerUsers = array(), $hardDelete = true)
   {
     if (!is_object($api)) {
       return false;
@@ -300,11 +300,12 @@ if (!function_exists('mikhmon_hotspot_account_key')) {
       if ($assignment === null || $assignment['role'] !== $role || $assignment['account_key'] !== $accountKey) {
         continue;
       }
-      $newComment = mikhmon_hotspot_clear_assignment_comment($comment, $session, $role, $accountKey);
-      $response = $api->comm("/ip/hotspot/user/set", array(
-        ".id" => $user['.id'],
-        "comment" => $newComment
-      ));
+      if ($hardDelete) {
+        $response = $api->comm("/ip/hotspot/user/remove", array(".id" => $user['.id']));
+      } else {
+        $newComment = mikhmon_hotspot_clear_assignment_comment($comment, $session, $role, $accountKey);
+        $response = $api->comm("/ip/hotspot/user/set", array(".id" => $user['.id'], "comment" => $newComment));
+      }
       if (!mikhmon_hotspot_routeros_response_ok($response)) {
         $ok = false;
       }
@@ -319,11 +320,12 @@ if (!function_exists('mikhmon_hotspot_account_key')) {
       if ($assignment === null || $assignment['role'] !== $role || $assignment['account_key'] !== $accountKey) {
         continue;
       }
-      $newComment = mikhmon_hotspot_clear_assignment_comment($comment, $session, $role, $accountKey);
-      $response = $api->comm("/ip/hotspot/ip-binding/set", array(
-        ".id" => $binding['.id'],
-        "comment" => $newComment
-      ));
+      if ($hardDelete) {
+        $response = $api->comm("/ip/hotspot/ip-binding/remove", array(".id" => $binding['.id']));
+      } else {
+        $newComment = mikhmon_hotspot_clear_assignment_comment($comment, $session, $role, $accountKey);
+        $response = $api->comm("/ip/hotspot/ip-binding/set", array(".id" => $binding['.id'], "comment" => $newComment));
+      }
       if (!mikhmon_hotspot_routeros_response_ok($response)) {
         $ok = false;
       }
@@ -338,10 +340,14 @@ if (!function_exists('mikhmon_hotspot_account_key')) {
       if ($assignment === null || $assignment['role'] !== $role || $assignment['account_key'] !== $accountKey) {
         continue;
       }
-      $response = $api->comm("/user/set", array(
-        ".id" => $routerUser['.id'],
-        "comment" => mikhmon_hotspot_assignment_base_comment($comment)
-      ));
+      if ($hardDelete) {
+        $response = $api->comm("/user/remove", array(".id" => $routerUser['.id']));
+      } else {
+        $response = $api->comm("/user/set", array(
+          ".id" => $routerUser['.id'],
+          "comment" => mikhmon_hotspot_assignment_base_comment($comment)
+        ));
+      }
       if (!mikhmon_hotspot_routeros_response_ok($response)) {
         $ok = false;
       }
@@ -533,7 +539,7 @@ if (!function_exists('mikhmon_hotspot_account_key')) {
           return array('ok' => false, 'error' => 'Adresse autorisée invalide. Utilisez une IPv4 ou un réseau IPv4/CIDR.');
         }
       }
-      $group = $role === 'manager' ? 'mikhmon-revendeur' : 'mikhmon-vendeur';
+      $group = $role === 'manager' ? 'mikhmon-gerant' : 'mikhmon-vendeur';
       $policy = $role === 'manager'
         ? 'read,write,test,winbox,password,web,api,rest-api'
         : 'read,test,winbox,password,web';
@@ -545,7 +551,7 @@ if (!function_exists('mikhmon_hotspot_account_key')) {
         $groupResponse = $api->comm('/user/group/add', array(
           'name' => $group,
           'policy' => $policy,
-          'comment' => 'Groupe limité créé par Mikhmon pour les comptes ' . ($role === 'manager' ? 'revendeurs' : 'vendeurs'),
+          'comment' => 'Groupe limité créé par Mikhmon pour les comptes ' . ($role === 'manager' ? 'gérants' : 'vendeurs'),
         ));
       } else {
         $groupId = isset($groups[0]['.id']) ? $groups[0]['.id'] : '';

@@ -1112,6 +1112,55 @@ if (isset($_POST['admin_send_accounting_notice'])) {
   </ol>
 </div>
 
+<!-- ── Commande RouterOS pour créer les groupes ── -->
+<div class="card box-bordered" id="mikrotik-groups-card" style="margin-bottom:15px;border-left:4px solid #1a6fa0;">
+  <div class="card-header" style="cursor:pointer;user-select:none;" onclick="var b=document.getElementById('mikrotik-groups-body');b.style.display=b.style.display==='none'?'block':'none';">
+    <h4 style="margin:0;"><i class="fa fa-terminal"></i> Commandes RouterOS — Créer les groupes Mikhmon <small style="font-size:12px;color:#64748b;margin-left:8px;">(cliquez pour ouvrir)</small></h4>
+  </div>
+  <div class="card-body" id="mikrotik-groups-body" style="display:none;">
+    <p style="color:#64748b;margin-top:0;font-size:13px;">
+      Copiez-collez ces commandes dans le <b>Terminal MikroTik</b> (WinBox → New Terminal, ou SSH) pour créer les trois groupes nécessaires à la création de comptes routeur limités pour gérants et vendeurs.<br>
+      <b>Ces groupes sont persistants dans le routeur</b> — ils survivent à la suppression et réinstallation du container Mikhmon.
+    </p>
+    <div style="position:relative;margin-bottom:14px;">
+      <pre id="mikrotik-groups-cmd" style="background:#1e2730;color:#a8d8a8;padding:14px 16px;border-radius:8px;font-size:13px;overflow-x:auto;white-space:pre;margin:0;line-height:1.7;">/user group
+add name=mikhmon-gerant policy=read,write,test,winbox,password,web,api,rest-api comment="Acces etendu gerants Mikhmon sans administration complete"
+add name=mikhmon-revendeur policy=read,write,test,winbox,password,web,api,rest-api comment="Acces etendu revendeurs Mikhmon sans administration complete"
+add name=mikhmon-vendeur policy=read,test,winbox,password,web comment="Acces limite vendeurs Mikhmon"</pre>
+      <button type="button" onclick="copyMikrotikCmd()" style="position:absolute;top:8px;right:8px;padding:4px 12px;background:#1a6fa0;color:#fff;border:none;border-radius:5px;font-size:12px;cursor:pointer;"><i class="fa fa-copy"></i> Copier</button>
+    </div>
+    <p style="color:#64748b;font-size:12px;margin:0;">
+      <i class="fa fa-info-circle" style="color:#1a6fa0;"></i>
+      <b>Groupes :</b>
+      <code>mikhmon-gerant</code> — pour les comptes gérants (lecture + écriture + API sans administration) &nbsp;|&nbsp;
+      <code>mikhmon-revendeur</code> — pour les comptes revendeurs &nbsp;|&nbsp;
+      <code>mikhmon-vendeur</code> — pour les comptes vendeurs (lecture seule + web, sans écriture API)
+    </p>
+    <div style="margin-top:12px;padding:10px 14px;background:#e8f5e9;border-radius:6px;border-left:3px solid #27ae60;font-size:12px;color:#243447;">
+      <b><i class="fa fa-shield" style="color:#27ae60;"></i> Persistance des données</b><br>
+      Chaque compte créé avec l'option <em>RouterOS limité</em> stocke son identifiant, rôle et session directement dans le commentaire MikroTik (<code>MIKHMON_ACCOUNT role=gerant/vendeur session=… account=…</code>).
+      En cas de suppression du container, réinstallez Mikhmon puis visitez cette page — les comptes vendeurs et gérants seront automatiquement restaurés depuis le routeur.
+      Les statistiques de ventes (revenus journaliers/mensuels) sont calculées à partir des tickets sur le routeur et ne sont jamais perdues.
+    </div>
+  </div>
+</div>
+<script>
+function copyMikrotikCmd() {
+  var el = document.getElementById('mikrotik-groups-cmd');
+  if (!el) return;
+  var text = el.innerText || el.textContent;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function() { alert('Commandes copiées !'); });
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    try { document.execCommand('copy'); alert('Commandes copiées !'); } catch(e) {}
+    document.body.removeChild(ta);
+  }
+}
+</script>
+
 <!-- ── Assignation depuis les utilisateurs Hotspot default ── -->
 <div class="card box-bordered hotspot-assign-card" style="margin-bottom:15px;border-left:4px solid #34495e;">
   <div class="card-header">
@@ -1639,7 +1688,7 @@ if (isset($_POST['admin_send_accounting_notice'])) {
             <select class="form-control" name="new_mode" id="seller-new-mode" onchange="msUpdateProvisionMode('seller')" required>
               <option value="hotspot_user">Créer un utilisateur Hotspot</option>
               <option value="ip_binding">Créer un IP Binding bypassed</option>
-              <option value="router_user">Créer un compte RouterOS limité</option>
+              <option value="router_user">Créer un compte RouterOS limité vendeur (mikhmon-vendeur)</option>
             </select>
           </div>
         </div>
@@ -1860,7 +1909,7 @@ if (isset($_POST['admin_send_accounting_notice'])) {
                 <select class="form-control" name="nm_mode" id="manager-new-mode" onchange="msUpdateProvisionMode('manager')" required>
                   <option value="hotspot_user">Créer un utilisateur Hotspot</option>
                   <option value="ip_binding">Créer un IP Binding bypassed</option>
-                  <option value="router_user">Créer un compte RouterOS limité revendeur</option>
+                  <option value="router_user">Créer un compte RouterOS limité gérant (mikhmon-gerant)</option>
                 </select>
               </div>
             </div>
