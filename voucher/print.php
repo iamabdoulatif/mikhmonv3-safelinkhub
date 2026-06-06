@@ -54,6 +54,8 @@ if (!isset($_SESSION["mikhmon"]) && empty($_SESSION['seller_username']) && empty
     exit;
   }
   include_once('../include/sellers_config.php');
+  include_once('../include/seller_ticket_helper.php');
+  include_once('../include/hotspot_account_assignment.php');
 
   include('../lib/formatbytesbites.php');
 
@@ -65,6 +67,27 @@ if (!isset($_SESSION["mikhmon"]) && empty($_SESSION['seller_username']) && empty
     $normalizedComment = strtolower(trim((string)$comment));
     if ($normalizedComment === '') {
       return '';
+    }
+
+    if (function_exists('mikhmon_comment_seller_key')) {
+      $sellerKey = mikhmon_comment_seller_key($comment, $sellersData);
+      if ($sellerKey !== '') {
+        $sellerName = trim(isset($sellersData[$sellerKey]['name']) ? (string)$sellersData[$sellerKey]['name'] : '');
+        return $sellerName !== '' ? $sellerName : $sellerKey;
+      }
+    }
+
+    if (function_exists('mikhmon_hotspot_assignment_from_comment')) {
+      $assignment = mikhmon_hotspot_assignment_from_comment($comment);
+      if ($assignment !== null && $assignment['role'] === 'seller') {
+        $sellerKey = $assignment['account_key'];
+        if (isset($sellersData[$sellerKey])) {
+          $sellerName = trim(isset($sellersData[$sellerKey]['name']) ? (string)$sellersData[$sellerKey]['name'] : '');
+          return $sellerName !== '' ? $sellerName : $sellerKey;
+        }
+        $baseName = trim((string)$assignment['base_comment']);
+        return $baseName !== '' ? $baseName : $sellerKey;
+      }
     }
 
     if (!empty($sellersData)) {

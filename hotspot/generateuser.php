@@ -369,11 +369,42 @@ if (!isset($_SESSION["mikhmon"]) && empty($_SESSION['manager_username'])) {
 
 	$srvlist = $API->comm("/ip/hotspot/print");
 	include_once($appPrefix . 'include/sellers_config.php');
+	include_once($appPrefix . 'include/managers_config.php');
 	include_once($appPrefix . 'include/seller_ticket_helper.php');
+	include_once($appPrefix . 'include/hotspot_account_assignment.php');
 	$sessionSellers = array();
 	$generationError = '';
 	$maxGenerateQty = mikhmon_generate_ticket_limit();
 	$selectedSellerId = isset($_POST['seller_id']) ? preg_replace('/[^a-zA-Z0-9_]/', '', trim($_POST['seller_id'])) : '';
+	if (!isset($sellers_data) || !is_array($sellers_data)) {
+		$sellers_data = array();
+	}
+	if (!isset($managers_data) || !is_array($managers_data)) {
+		$managers_data = array();
+	}
+	if (function_exists('mikhmon_hotspot_restored_account_records')) {
+		$hotspotDefaultUsersRaw = $API->comm('/ip/hotspot/user/print', array('?profile' => 'default'));
+		$hotspotIpBindingRows = $API->comm('/ip/hotspot/ip-binding/print');
+		$routerUserRows = $API->comm('/user/print');
+		$restoredAccounts = mikhmon_hotspot_restored_account_records(
+			is_array($hotspotDefaultUsersRaw) ? $hotspotDefaultUsersRaw : array(),
+			is_array($hotspotIpBindingRows) ? $hotspotIpBindingRows : array(),
+			$session,
+			$sellers_data,
+			$managers_data,
+			is_array($routerUserRows) ? $routerUserRows : array()
+		);
+		foreach ($restoredAccounts['sellers'] as $restoredKey => $restoredRecord) {
+			if (isset($sellers_data[$restoredKey]) || isset($managers_data[$restoredKey])) {
+				continue;
+			}
+			$storedRecord = $restoredRecord;
+			$storedRecord['password'] = mikhmon_account_password_storage($storedRecord['password']);
+			if (mikhmon_replace_assignment_line_in_file($appPrefix . 'include/sellers_config.php', 'sellers_data', $restoredKey, $storedRecord)) {
+				$sellers_data[$restoredKey] = $storedRecord;
+			}
+		}
+	}
 	if (!empty($sellers_data) && is_array($sellers_data)) {
 			foreach ($sellers_data as $sellerKey => $sellerData) {
 				$sellerSession = isset($sellerData['session']) ? trim($sellerData['session']) : '';
