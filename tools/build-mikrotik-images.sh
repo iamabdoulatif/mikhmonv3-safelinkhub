@@ -9,7 +9,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-OUT="$PROJECT_DIR/docker-output"
+OUT="${OUT:-$PROJECT_DIR/docker-output}"
 DOCKERFILE="${DOCKERFILE:-$PROJECT_DIR/Dockerfile.mikrotik}"
 REPO="${REPO:-local/mikhmonv3-safelinkhub}"
 BUILDER="${BUILDER:-safelink-builder}"

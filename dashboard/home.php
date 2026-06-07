@@ -217,6 +217,7 @@ if (!isset($_SESSION["mikhmon"])) {
   $incomeMonthTotal = 0.0;
   $incomeTodayFormatted = mikhmon_format_money_amount(0, $currency, $cekindo);
   $incomeMonthFormatted = mikhmon_format_money_amount(0, $currency, $cekindo);
+  $revenueForecast = null;
   if ($livereport != "disable") {
     $currentDayKey = $clockDayKey;
     $incomeSummary = mikhmon_dashboard_income_summary($API, $clockDayKey);
@@ -233,6 +234,8 @@ if (!isset($_SESSION["mikhmon"])) {
     $_SESSION[$session.'totalBl'] = $incomeMonthCount;
     $_SESSION[$session.'dincome'] = $incomeTodayFormatted;
     $_SESSION[$session.'mincome'] = $incomeMonthFormatted;
+
+    $revenueForecast = mikhmon_revenue_forecast($API, $clockDayKey, 7);
   }
 /*
 // get selling report
@@ -691,6 +694,53 @@ if (!isset($_SESSION["mikhmon"])) {
               </div>
             </div>
             </div>
+            <?php if ($revenueForecast !== null && $revenueForecast['avg_daily'] > 0): ?>
+            <div id="r_forecast" class="row">
+              <div class="card forecast-card">
+                <div class="card-header">
+                  <h3><i class="fa fa-line-chart"></i> <?= isset($_revenue_forecast_title) ? $_revenue_forecast_title : 'Prévision de revenu' ?></h3>
+                </div>
+                <div class="card-body">
+                  <?php
+                    $fc = $revenueForecast;
+                    $projFmt = mikhmon_format_money_amount($fc['projected'], $currency, $cekindo);
+                    $avgFmt  = mikhmon_format_money_amount($fc['avg_daily'], $currency, $cekindo);
+                    $confidenceIcon = ($fc['confidence'] === 'high') ? 'fa-check-circle forecast-conf-high'
+                                    : (($fc['confidence'] === 'medium') ? 'fa-exclamation-circle forecast-conf-medium'
+                                    : 'fa-question-circle forecast-conf-low');
+                    $confidenceLabel = ($fc['confidence'] === 'high') ? 'Fiable'
+                                     : (($fc['confidence'] === 'medium') ? 'Estimation' : 'Approximatif');
+                  ?>
+                  <div class="forecast-projected-amount"><?= $projFmt ?></div>
+                  <div class="forecast-message">
+                    <i class="fa fa-magic"></i>
+                    <?php
+                      $daysWord = ($fc['window_days'] == 7) ? '7 derniers jours' : $fc['window_days'] . ' derniers jours';
+                      echo 'Vous gagnerez probablement <strong>' . $projFmt . '</strong> ce mois-ci, en tenant compte des revenus journaliers sur les ' . $daysWord . '.';
+                    ?>
+                  </div>
+                  <div class="forecast-details">
+                    <div class="forecast-detail-item">
+                      <span class="forecast-detail-label"><i class="fa fa-calendar-o"></i> Moy. journalière</span>
+                      <span class="forecast-detail-value"><?= $avgFmt ?></span>
+                    </div>
+                    <div class="forecast-detail-item">
+                      <span class="forecast-detail-label"><i class="fa fa-clock-o"></i> Jours restants</span>
+                      <span class="forecast-detail-value"><?= max(0, $fc['days_remaining'] - 1) ?> j</span>
+                    </div>
+                    <div class="forecast-detail-item">
+                      <span class="forecast-detail-label"><i class="fa fa-bar-chart"></i> Jours analysés</span>
+                      <span class="forecast-detail-value"><?= $fc['days_sampled'] ?> / <?= $fc['window_days'] ?></span>
+                    </div>
+                    <div class="forecast-detail-item">
+                      <span class="forecast-detail-label"><i class="fa <?= $confidenceIcon ?>"></i> Confiance</span>
+                      <span class="forecast-detail-value"><?= $confidenceLabel ?></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <?php endif; ?>
             <div id="r_3" class="row">
             <div class="card">
               <div class="card-header">
