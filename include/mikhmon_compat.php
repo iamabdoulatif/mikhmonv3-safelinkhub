@@ -821,36 +821,33 @@ if (!function_exists('mikhmon_month_map')) {
 
   function mikhmon_fetch_sales_by_day($API, $dayKey)
   {
-    $rows = array();
-    $sources = array_values(array_unique(array_filter(array(
-      mikhmon_normalize_sale_date($dayKey),
-      mikhmon_iso_date_from_day_key($dayKey),
-    ))));
-
-    foreach ($sources as $source) {
-      $data = $API->comm('/system/script/print', array('?source' => $source));
-      if (is_array($data)) {
-        $rows = array_merge($rows, $data);
-      }
+    $normalizedDay = mikhmon_normalize_sale_date($dayKey);
+    $monthKey = mikhmon_sale_month_key($normalizedDay);
+    $monthRows = mikhmon_sales_from_used_hotspot_users($API, '', $monthKey);
+    if (!empty($monthRows)) {
+      return mikhmon_filter_sale_scripts($monthRows, $normalizedDay, '');
     }
 
-    return mikhmon_unique_sale_scripts($rows);
+    $data = $API->comm('/system/script/print', array('?comment' => 'mikhmon'));
+    if (is_array($data)) {
+      return mikhmon_filter_sale_scripts(mikhmon_unique_sale_scripts($data), $normalizedDay, '');
+    }
+    return array();
   }
 
   function mikhmon_fetch_sales_by_month($API, $monthKey)
   {
     $monthKey = strtolower(trim((string) $monthKey));
-    $rows = array();
-    $owners = array_merge(array($monthKey), mikhmon_legacy_ros7_owner_keys($monthKey));
-
-    foreach (array_values(array_unique($owners)) as $owner) {
-      $data = $API->comm('/system/script/print', array('?owner' => $owner));
-      if (is_array($data)) {
-        $rows = array_merge($rows, $data);
-      }
+    $rows = mikhmon_sales_from_used_hotspot_users($API, '', $monthKey);
+    if (!empty($rows)) {
+      return $rows;
     }
 
-    return mikhmon_filter_sale_scripts(mikhmon_unique_sale_scripts($rows), '', $monthKey);
+    $data = $API->comm('/system/script/print', array('?comment' => 'mikhmon'));
+    if (is_array($data)) {
+      return mikhmon_filter_sale_scripts(mikhmon_unique_sale_scripts($data), '', $monthKey);
+    }
+    return array();
   }
 
   function mikhmon_income_summary_from_scripts($scripts, $dayKey, $monthKey)
@@ -1049,6 +1046,83 @@ if (!function_exists('mikhmon_month_map')) {
     return $summary;
   }
 
+  function mikhmon_sales_from_used_hotspot_users($API, $dayKey = '', $monthKey = '')
+  {
+    $dayKey = mikhmon_normalize_sale_date($dayKey);
+    $monthKey = strtolower(trim((string) $monthKey));
+    if ($monthKey === '' && $dayKey !== '') {
+      $monthKey = mikhmon_sale_month_key($dayKey);
+    }
+
+    $profileRows = $API->comm('/ip/hotspot/user/profile/print', array('.proplist' => 'name,on-login'));
+    $profiles = array();
+    if (is_array($profileRows)) {
+      foreach ($profileRows as $profileRow) {
+        $profileName = isset($profileRow['name']) ? trim((string) $profileRow['name']) : '';
+        if ($profileName === '') {
+          continue;
+        }
+        $meta = mikhmon_profile_income_meta_from_on_login(isset($profileRow['on-login']) ? $profileRow['on-login'] : '');
+        $meta['validity_seconds'] = mikhmon_routeros_duration_seconds($meta['validity']);
+        if ($meta['price'] > 0 && $meta['validity_seconds'] > 0) {
+          $profiles[$profileName] = $meta;
+        }
+      }
+    }
+    if (empty($profiles)) {
+      return array();
+    }
+
+    $userRows = $API->comm('/ip/hotspot/user/print', array('.proplist' => 'name,profile,comment'));
+    if (!is_array($userRows)) {
+      return array();
+    }
+
+    $rows = array();
+    foreach ($userRows as $userRow) {
+      $profileName = isset($userRow['profile']) ? trim((string) $userRow['profile']) : '';
+      if ($profileName === '' || !isset($profiles[$profileName])) {
+        continue;
+      }
+
+      $expiresAt = mikhmon_expiration_comment_datetime(isset($userRow['comment']) ? $userRow['comment'] : '');
+      if (!$expiresAt) {
+        continue;
+      }
+
+      $soldAt = clone $expiresAt;
+      $soldAt->modify('-' . (int) $profiles[$profileName]['validity_seconds'] . ' seconds');
+      $saleDay = mikhmon_normalize_sale_date($soldAt->format('Y-m-d'));
+      $saleMonth = mikhmon_sale_month_key($saleDay);
+      if ($saleMonth === '' || ($monthKey !== '' && $saleMonth !== $monthKey) || ($dayKey !== '' && $saleDay !== $dayKey)) {
+        continue;
+      }
+
+      $userName = isset($userRow['name']) ? trim((string) $userRow['name']) : '';
+      $comment = isset($userRow['comment']) ? trim((string) $userRow['comment']) : '';
+      $price = (string) $profiles[$profileName]['price'];
+      $parts = array(
+        $saleDay,
+        $soldAt->format('H:i:s'),
+        $userName,
+        $price,
+        '',
+        '',
+        $profiles[$profileName]['validity'],
+        $profileName,
+        $comment,
+      );
+      $rows[] = array(
+        'name' => implode('-|-', $parts),
+        'source' => $saleDay,
+        'owner' => $saleMonth,
+        'comment' => 'mikhmon',
+      );
+    }
+
+    return mikhmon_unique_sale_scripts($rows);
+  }
+
   function mikhmon_income_summary_has_values($summary)
   {
     return is_array($summary)
@@ -1086,6 +1160,89 @@ if (!function_exists('mikhmon_month_map')) {
     }
 
     return mikhmon_income_summary_from_used_hotspot_users($API, $dayKey);
+  }
+
+  /**
+   * Compute a monthly revenue forecast from the last N days of sales.
+   *
+   * Returns an array:
+   *   days_sampled   – number of days that had at least one sale
+   *   window_days    – number of calendar days in the look-back window
+   *   avg_daily      – average daily revenue over those days
+   *   days_remaining – calendar days left in the month (including today)
+   *   month_so_far   – revenue already recorded this month
+   *   projected      – projected month-end total
+   *   confidence     – 'low' | 'medium' | 'high'
+   */
+  function mikhmon_revenue_forecast($API, $dayKey, $lookbackDays = 7)
+  {
+    $dayKey    = mikhmon_normalize_sale_date($dayKey);
+    $monthKey  = mikhmon_sale_month_key($dayKey);
+    $dayNum    = mikhmon_sale_day_number($dayKey);
+
+    // Determine total days in this month
+    if (preg_match('/^([a-z]{3})\/(\d{2})\/(\d{4})$/', $dayKey, $m)) {
+      $year  = (int) $m[3];
+      $month = (int) date('n', strtotime($m[1] . ' 1 ' . $year));
+      $daysInMonth = (int) date('t', mktime(0, 0, 0, $month, 1, $year));
+    } else {
+      $daysInMonth = 30;
+      $year  = (int) date('Y');
+      $month = (int) date('n');
+    }
+
+    $daysRemaining = $daysInMonth - $dayNum + 1; // include today
+
+    // Fetch this month's scripts and group revenue by day
+    $scripts    = mikhmon_fetch_sales_by_month($API, $monthKey);
+    $dailyTotals = array(); // dayKey => total
+    $monthTotal  = 0.0;
+
+    foreach ($scripts as $script) {
+      $sale  = mikhmon_parse_sale_script($script);
+      if ($sale['month_key'] !== $monthKey) continue;
+      $price = mikhmon_parse_money_amount($sale['price']);
+      $monthTotal += $price;
+      $dk = $sale['date'];
+      if (!isset($dailyTotals[$dk])) $dailyTotals[$dk] = 0.0;
+      $dailyTotals[$dk] += $price;
+    }
+
+    // Build the look-back window: last $lookbackDays calendar days up to today
+    $windowRevenue = 0.0;
+    $daySampled    = 0;
+    for ($offset = 0; $offset < $lookbackDays; $offset++) {
+      $ts   = mktime(0, 0, 0, $month, $dayNum - $offset, $year);
+      $dk   = mikhmon_normalize_sale_date(date('Y-m-d', $ts));
+      if (isset($dailyTotals[$dk])) {
+        $windowRevenue += $dailyTotals[$dk];
+        $daySampled++;
+      }
+    }
+
+    $avgDaily = ($lookbackDays > 0) ? ($windowRevenue / $lookbackDays) : 0.0;
+
+    // Projected total = already earned + avg_daily * remaining days
+    // (daysRemaining-1 because today is already partially counted in month_so_far)
+    $projected = $monthTotal + $avgDaily * max(0, $daysRemaining - 1);
+
+    if ($daySampled >= 5) {
+      $confidence = 'high';
+    } elseif ($daySampled >= 2) {
+      $confidence = 'medium';
+    } else {
+      $confidence = 'low';
+    }
+
+    return array(
+      'days_sampled'   => $daySampled,
+      'window_days'    => $lookbackDays,
+      'avg_daily'      => $avgDaily,
+      'days_remaining' => $daysRemaining,
+      'month_so_far'   => $monthTotal,
+      'projected'      => $projected,
+      'confidence'     => $confidence,
+    );
   }
 
   function mikhmon_income_counter_scheduler_source()
