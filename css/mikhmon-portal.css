@@ -1746,6 +1746,35 @@
   }
 }
 
+/* iPad / Tablet portrait tweaks (750px - 1024px) */
+@media (min-width: 750px) and (max-width: 1024px) {
+  .portal-table-min-lg {
+    min-width: 640px !important;
+  }
+  .portal-table-min-md {
+    min-width: 520px !important;
+  }
+  .portal-table-min-sm {
+    min-width: 420px !important;
+  }
+
+  .dashboard-top-row > .col-4,
+  .dashboard-hotspot-grid > .col-3,
+  .dashboard-analytics-grid > .col-4 {
+    width: 50%;
+  }
+
+  .seller-summary-cards,
+  .mgr-summary-cards,
+  .dash-cards-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .portal-summary-value {
+    font-size: 32px;
+  }
+}
+
 @media (max-width: 750px) {
   .seller-portal .main-container,
   .manager-portal .main-container {

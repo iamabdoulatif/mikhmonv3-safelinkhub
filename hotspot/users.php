@@ -473,8 +473,8 @@ updateBatchSplitTotals();
 <table id="dataTable" class="table table-bordered table-hover text-nowrap portal-table-min-lg">
   <thead>
   <tr>
-    <th style="min-width:50px;" class="align-middle text-center" id="cuser"><?= mikhmon_count_only_result($counttuser); ?></th>
-    <th style="min-width:50px;" class="pointer" title="Click to sort"><i class="fa fa-sort"></i> Server</th>
+    <th class="th-min" class="align-middle text-center" id="cuser"><?= mikhmon_count_only_result($counttuser); ?></th>
+    <th class="th-min" class="pointer" title="Click to sort"><i class="fa fa-sort"></i> Server</th>
     <th class="pointer" title="Click to sort"><i class="fa fa-sort"></i> <?= $_name ?></th>
     <th>Print</th>
     <th class="pointer" title="Click to sort"><i class="fa fa-sort"></i> <?= $_profile ?></th>

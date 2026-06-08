@@ -3,17 +3,9 @@
 $dockerfile = file_get_contents(__DIR__ . '/../Dockerfile.mikrotik');
 
 $requiredRuntimeEntries = [
-    'FROM alpine:3.15',
-    'apk add --no-cache',
-    'php7-curl',
-    'php7-mbstring',
-    'php7-openssl',
-    'php7-sockets',
-    'php7-sqlite3',
-    'php7-zip',
-    'tzdata',
-    'ln -sf /usr/bin/php7 /usr/bin/php',
-    'runtime-size-pad.bin',
+    'FROM --platform=$TARGETPLATFORM php:7.4-cli-alpine3.16',
+    'ARG TARGETPLATFORM',
+    'ENV PHP_CLI_SERVER_WORKERS="4"',
     '/src/src/tools',
     '/src/src/tests',
     '/src/src/docs',

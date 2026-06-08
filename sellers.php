@@ -742,8 +742,8 @@ if ($seller_logged_in && $action === 'generate') {
 <!-- ═══════════════════════════════════════════════════════════════════════════
      PAGE DE CONNEXION VENDEUR
      ═══════════════════════════════════════════════════════════════════════ -->
-<div class="portal-auth-wrap" style="max-width:400px;margin:0 auto;padding:5% 0 32px;min-height:auto;">
-  <div class="login-card card portal-auth-card portal-auth-card-sm" style="width:100%;max-width:400px;margin:0 auto;">
+<div class="portal-auth-wrap login-wrap-sm">
+  <div class="login-card card portal-auth-card portal-auth-card-sm login-card-sm">
     <div class="card-header text-center">
       <h3><?= isset($_please_login) ? $_please_login : 'Veuillez vous connecter' ?></h3>
     </div>
@@ -1682,13 +1682,13 @@ filterTicketRows();
 
   <!-- Résumé routeur -->
   <div class="card" style="margin-bottom:14px;">
-    <div class="card-body" style="padding:14px 18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
-      <div style="flex:1;min-width:180px;">
+    <div class="card-body seller-summary-flex" style="padding:14px 18px;">
+      <div class="seller-summary-flex-item">
         <div class="portal-dark-muted" style="font-size:13px;color:#aaa;margin-bottom:2px;"><i class="fa fa-wifi"></i> <?= htmlspecialchars($sellerDisplayIdentity) ?></div>
         <div style="font-size:17px;font-weight:bold;"><?= htmlspecialchars($sellerName) ?></div>
         <span style="background:#27ae60;color:#fff;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:bold;"><i class="fa fa-user"></i> Vendeur</span>
       </div>
-      <div style="text-align:right;min-width:160px;">
+      <div class="seller-summary-flex-item-right">
         <div class="portal-dark-muted" style="font-size:12px;color:#aaa;"><i class="fa fa-clock-o"></i> <?= date("d/m/Y H:i") ?></div>
       </div>
     </div>

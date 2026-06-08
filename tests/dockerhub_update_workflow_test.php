@@ -23,7 +23,8 @@ $checks = array(
     'dockerhub repository' => 'latif225/mikhmonv3-safelinkhub',
     'build timestamp step' => 'BUILD_STAMP=',
     'skopeo install step' => 'sudo apt-get install -y skopeo',
-    'qemu setup step' => 'docker/setup-qemu-action@v3',
+    'qemu setup step' => 'docker/setup-qemu-action@v4',
+    'qemu cache disabled' => 'cache-image: false',
     'latest-only multi-arch manifest tag' => 'MANIFEST_TAGS: latest',
     'dockerhub tag cleanup default' => 'DELETE_DOCKERHUB_EXISTING_TAGS: "1"',
 );

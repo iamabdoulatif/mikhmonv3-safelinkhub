@@ -265,7 +265,7 @@ if ($sellerGroup['name'] !== 'mikhmon-vendeur' || $sellerGroup['policy'] !== 're
 
 $routerManagerApi = new MikhmonHotspotAssignmentFakeApi();
 $routerManager = mikhmon_hotspot_provision_account($routerManagerApi, 'router_user', 'ALB-TECH', 'manager', 'manager_router', 'manager-pass', 'Manager Router');
-if (!$routerManager['ok'] || $routerManagerApi->calls[1][1]['name'] !== 'mikhmon-revendeur' || $routerManagerApi->calls[1][1]['policy'] !== 'read,write,test,winbox,password,web,api,rest-api') {
+if (!$routerManager['ok'] || $routerManagerApi->calls[1][1]['name'] !== 'mikhmon-gerant' || $routerManagerApi->calls[1][1]['policy'] !== 'read,write,test,winbox,password,web,api,rest-api') {
     fwrite(STDERR, 'manager RouterOS group must have extended rights without full administration policies' . PHP_EOL);
     exit(1);
 }
@@ -294,7 +294,8 @@ $requiredPageSnippets = array(
     'mikhmon_hotspot_clear_account_footprints',
     'name="new_mode" id="seller-new-mode"',
     'name="nm_mode" id="manager-new-mode"',
-    '<option value="router_user">Créer un compte RouterOS limité</option>',
+    '<option value="router_user">Créer un compte RouterOS limité vendeur (mikhmon-vendeur)</option>',
+    '<option value="router_user">Créer un compte RouterOS limité gérant (mikhmon-gerant)</option>',
     'name="new_user" id="seller-new-user"',
     'name="nm_user" id="manager-new-user"',
     'name="new_mac" id="seller-new-mac"',

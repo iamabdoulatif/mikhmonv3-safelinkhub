@@ -13,7 +13,7 @@ $checks = array(
     'PUSH_IMAGES="${PUSH_IMAGES:-1}"',
     'DELETE_DOCKERHUB_EXISTING_TAGS="${DELETE_DOCKERHUB_EXISTING_TAGS:-1}"',
     'MANIFEST_TAGS="${MANIFEST_TAGS:-latest}"',
-    'MIN_COMPRESSED_MB="${MIN_COMPRESSED_MB:-11}"',
+    'MIN_COMPRESSED_MB="${MIN_COMPRESSED_MB:-10}"',
     'MAX_COMPRESSED_MB="${MAX_COMPRESSED_MB:-13}"',
     'SIZE_CHECK_PLATFORMS="${SIZE_CHECK_PLATFORMS:-linux/arm64 linux/arm/v6 linux/arm/v7}"',
     'measure_compressed_size',

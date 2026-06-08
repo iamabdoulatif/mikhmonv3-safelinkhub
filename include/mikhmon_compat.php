@@ -838,16 +838,18 @@ if (!function_exists('mikhmon_month_map')) {
   function mikhmon_fetch_sales_by_month($API, $monthKey)
   {
     $monthKey = strtolower(trim((string) $monthKey));
-    $rows = mikhmon_sales_from_used_hotspot_users($API, '', $monthKey);
-    if (!empty($rows)) {
-      return $rows;
+    $rows = array();
+    $usedRows = mikhmon_sales_from_used_hotspot_users($API, '', $monthKey);
+    if (!empty($usedRows)) {
+      return mikhmon_unique_sale_scripts($usedRows);
     }
 
     $data = $API->comm('/system/script/print', array('?comment' => 'mikhmon'));
     if (is_array($data)) {
-      return mikhmon_filter_sale_scripts(mikhmon_unique_sale_scripts($data), '', $monthKey);
+      $rows = mikhmon_filter_sale_scripts($data, '', $monthKey);
     }
-    return array();
+
+    return mikhmon_unique_sale_scripts($rows);
   }
 
   function mikhmon_income_summary_from_scripts($scripts, $dayKey, $monthKey)

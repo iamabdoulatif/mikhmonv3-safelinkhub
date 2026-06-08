@@ -300,8 +300,8 @@ $loginHotspotName = isset($hotspotname) && $hotspotname !== '' ? ' ' . $hotspotn
     </style>
   </head>
   <body class="auth-screen">
-    <div class="portal-auth-wrap" style="max-width:400px;margin:0 auto;padding:5% 0 32px;min-height:auto;">
-      <div class="login-card card portal-auth-card portal-auth-card-sm" style="width:100%;max-width:400px;margin:0 auto;">
+    <div class="portal-auth-wrap login-wrap-sm">
+      <div class="login-card card portal-auth-card portal-auth-card-sm login-card-sm">
         <div class="card-header text-center">
           <h3><?= isset($_please_login) ? $_please_login : 'Please Login' ?></h3>
         </div>

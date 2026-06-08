@@ -173,7 +173,7 @@ include('../lang/'.$langid.'.php');
   </div>
   <div class="card-body" style="padding:8px;">
     <div class="overflow" style="-webkit-overflow-scrolling:touch;">
-    <table class="table table-sm table-bordered table-hover" style="font-size:13px;margin-bottom:0;min-width:560px;">
+    <table class="table table-sm table-bordered table-hover" style="font-size:13px;margin-bottom:0;">
       <thead class="thead-light">
         <tr>
           <th style="width:30%"><?= $_seller ?> / <?= $_profile ?></th>

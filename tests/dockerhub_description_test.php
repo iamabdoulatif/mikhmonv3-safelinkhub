@@ -68,7 +68,7 @@ foreach ($requiredAssets as $asset => [$minWidth, $minHeight]) {
 }
 
 $requiredWorkflowSnippets = [
-    'peter-evans/dockerhub-description@v4',
+    'peter-evans/dockerhub-description@v5',
     'repository: latif225/mikhmonv3-safelinkhub',
     'readme-filepath: ./dockerhub/README.md',
     'short-description: "Mikhmon v3 pour MikroTik Hotspot',

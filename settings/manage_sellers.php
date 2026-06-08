@@ -1391,7 +1391,7 @@ function copyMikrotikCmd() {
             <tr>
               <td>Taux de commission (%)</td>
               <td>
-                <input class="form-control" type="number" name="sc_rate" min="0" max="100" value="<?= $su_rate ?>" required style="max-width:120px;">
+                <input class="form-control input-rate" type="number" name="sc_rate" min="0" max="100" value="<?= $su_rate ?>" required>
                 <small style="color:#888;display:block;margin-top:4px;">0 = pas de commission · max 100%</small>
               </td>
             </tr>
@@ -1457,7 +1457,7 @@ function copyMikrotikCmd() {
       </div>
 
       <!-- Tableau vendeurs -->
-      <div class="table-responsive" style="max-width:560px;">
+      <div class="table-responsive table-wrap-sm">
       <table class="table table-bordered portal-table-min-sm">
         <thead class="thead-light">
           <tr>
@@ -1599,7 +1599,7 @@ function copyMikrotikCmd() {
 
     <!-- Formulaire transfert admin -->
     <?php if ($hasAny): ?>
-    <form method="post" action="?id=sellers&session=<?= htmlspecialchars($session) ?>" style="max-width:560px;" id="adminTransferForm">
+    <form method="post" action="?id=sellers&session=<?= htmlspecialchars($session) ?>" class="form-wrap-md" id="adminTransferForm">
       <?= csrf_field() ?>
       <input type="hidden" name="admin_transfer" value="1">
       <p style="color:#666;font-size:13px;margin-bottom:12px;">
@@ -2240,7 +2240,7 @@ function copyMikrotikCmd() {
                   <?= htmlspecialchars($notif['from'] ?? '') ?> → <?= htmlspecialchars($notif['to'] ?? '') ?>
                 </span>
               </td>
-              <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="<?= htmlspecialchars($notif['message'] ?? '') ?>">
+              <td class="cell-ellipsis" title="<?= htmlspecialchars($notif['message'] ?? '') ?>">
                 <?= htmlspecialchars(mb_substr($notif['message'] ?? '', 0, 80)) ?>…
               </td>
               <td class="text-center" style="white-space:nowrap;color:#888;font-size:12px;"><?= htmlspecialchars(substr($notif['created_at'] ?? '', 0, 16)) ?></td>

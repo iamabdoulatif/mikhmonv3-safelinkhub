@@ -1548,3 +1548,363 @@ body {
 .overflow.box-bordered {
   -webkit-overflow-scrolling: touch;
 }
+
+/* ================================================================
+   SECTION 30 - iPAD / TABLET BREAKPOINT (750px - 1024px)
+   Fixes text overflow on cards and tables between mobile & desktop.
+   ================================================================ */
+@media screen and (min-width: 750px) and (max-width: 1024px) {
+  /* Dashboard top-row cards: 2 columns instead of 3 */
+  .dashboard-top-row > .col-4 {
+    float: left;
+    width: 50%;
+    max-width: 50%;
+    box-sizing: border-box;
+  }
+
+  /* Dashboard hotspot/pppoe grids: 2 columns instead of 4 */
+  .dashboard-hotspot-grid > .col-3,
+  .dashboard-pppoe-card .dashboard-hotspot-grid > .col-3 {
+    width: 50%;
+    float: left;
+  }
+
+  /* Analytics grid: 2 columns instead of 3 */
+  .dashboard-analytics-grid > .col-4 {
+    width: 50%;
+    float: left;
+  }
+
+  /* Reduce card font sizes so text fits */
+  .dashboard-top-row .box-group-area span,
+  .dashboard-top-row .box-group-area {
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  .dashboard-hotspot-grid .box h1,
+  .dashboard-pppoe-card .box h1,
+  .dashboard-analytics-grid .box h1 {
+    font-size: 20px;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  .dashboard-hotspot-grid .box a div,
+  .dashboard-pppoe-card .box a div,
+  .dashboard-analytics-grid .box div {
+    font-size: 12px;
+  }
+
+  /* Shrink table min-widths so they dont force horizontal scroll */
+  .portal-table-min-lg {
+    min-width: 640px !important;
+  }
+  .portal-table-min-md {
+    min-width: 520px !important;
+  }
+  .portal-table-min-sm {
+    min-width: 420px !important;
+  }
+
+  /* Allow text-wrap inside scrollable tables on tablet */
+  .overflow > .table.text-nowrap,
+  .overflow > table.text-nowrap,
+  .table-responsive > .table.text-nowrap,
+  .table-responsive > table.text-nowrap {
+    min-width: 0;
+  }
+  .overflow .table.text-nowrap td,
+  .overflow .table.text-nowrap th,
+  .table-responsive .table.text-nowrap td,
+  .table-responsive .table.text-nowrap th {
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  /* Manager / seller portal cards */
+  .mgr-dash-card .dashboard-hotspot-grid > .col-3,
+  .seller-dash-card .dashboard-hotspot-grid > .col-3 {
+    width: 50%;
+    float: left;
+  }
+
+  /* Generic card grids inside overflow/card-body (quickprint, userbyprofile, etc.) */
+  .card-body .overflow .row > .col-4 > .box,
+  .card-body .overflow .row > .col-4 > .quick,
+  .overflow .row > .col-4 > .box,
+  .overflow .row > .col-4 > .quick {
+    width: 50%;
+    float: left;
+  }
+
+  /* Manager overview summary cards (col-3 inside mgr-summary-cards) */
+  .manager-overview-grid > .col-3,
+  .manager-overview-grid > .col-3.manager-bootstrap-col {
+    width: 50% !important;
+    float: left;
+  }
+
+  /* Seller sales summary cards */
+  .seller-portal .seller-sales-summary-grid > .seller-bootstrap-col {
+    width: 50% !important;
+    float: left;
+  }
+
+  /* Manager vendors summary cards */
+  .manager-vendors-summary-row > .col-3,
+  .manager-vendors-summary-row > .col-3.manager-bootstrap-col,
+  .manager-vendors-summary-row > .col-3.col-box-6 {
+    width: 50% !important;
+    float: left;
+  }
+
+  /* Manager accounting / tickets filter grids */
+  .manager-accounting-form .portal-filter-item,
+  .mgr-expense-form .portal-filter-item,
+  .portal-filter-grid > .portal-filter-item {
+    min-width: 0;
+  }
+
+  /* Manager ticket filter items */
+  .manager-tickets-row .portal-filter-item.col-3,
+  .manager-tickets-row .portal-filter-item.col-3.col-box-12 {
+    width: 50% !important;
+    float: left;
+  }
+
+  /* Livereport table */
+  .card-body > .overflow table[style*="min-width:560px"],
+  .card-body > .overflow table[style*="min-width: 560px"] {
+    min-width: 480px !important;
+  }
+}
+
+/* ================================================================
+   SECTION 31 - CARD TEXT OVERFLOW GUARD (all breakpoints)
+   ================================================================ */
+.box h1,
+.box h2,
+.box h3,
+.box h4 {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  hyphens: auto;
+}
+
+.box a div,
+.box a span,
+.box-group-area span,
+.box-group-area div {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* Ensure the icon + text layout never overflows its box */
+.box-group {
+  min-width: 0;
+}
+
+.box-group-area {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Forecast card responsive fixes */
+.forecast-card .card-body {
+  overflow-wrap: anywhere;
+}
+.forecast-projected-amount {
+  word-break: break-word;
+  font-size: clamp(22px, 5vw, 32px);
+}
+
+/* ================================================================
+   SECTION 32 - SMALL PHONE TWEAKS (<= 380px)
+   ================================================================ */
+@media screen and (max-width: 380px) {
+  .dashboard-top-row .box-group-icon,
+  #r_4 .box-group-icon {
+    flex: 0 0 36px;
+    width: 36px;
+    min-width: 36px;
+    font-size: 22px;
+  }
+
+  .dashboard-hotspot-grid .box h1,
+  .dashboard-pppoe-card .box h1,
+  .dashboard-analytics-grid .box h1 {
+    font-size: 18px;
+  }
+
+  .box-stat-unit {
+    font-size: 13px;
+  }
+}
+
+/* ================================================================
+   SECTION 33 - INLINE MIN-WIDTH FIXES (all breakpoints)
+   Override inline min-width styles that break mobile layouts.
+   ================================================================ */
+@media screen and (max-width: 749px) {
+  /* Manager generate button */
+  .portal-toolbar button[style*="min-width:240px"],
+  .portal-toolbar .btn[style*="min-width:240px"] {
+    min-width: 0 !important;
+    width: 100%;
+  }
+
+  /* Seller summary flex items */
+  .card-body[style*="display:flex"] > div[style*="min-width:180px"],
+  .card-body[style*="display:flex"] > div[style*="min-width:160px"] {
+    min-width: 0 !important;
+    flex: 1 1 100% !important;
+    width: 100%;
+  }
+}
+
+/* ================================================================
+   SECTION 34 - INLINE MAX-WIDTH CONTAINER FIXES
+   Prevent max-width containers from overflowing their parents.
+   ================================================================ */
+@media screen and (max-width: 749px) {
+  .card-body > div[style*="max-width:560px"],
+  .card-body > form[style*="max-width:560px"],
+  .card-body > div[style*="max-width:680px"],
+  .card-body > div[style*="max-width:580px"] {
+    max-width: 100% !important;
+  }
+}
+
+@media screen and (min-width: 750px) and (max-width: 1024px) {
+  .col-8 .card-body > div[style*="max-width:560px"],
+  .col-8 .card-body > form[style*="max-width:560px"] {
+    max-width: 100% !important;
+  }
+}
+
+/* ================================================================
+   SECTION 35 - UTILITY CLASSES (replace inline styles)
+   ================================================================ */
+
+/* Button sizing */
+.btn-generate {
+  min-width: 240px;
+}
+@media screen and (max-width: 749px) {
+  .btn-generate {
+    min-width: 0;
+    width: 100%;
+  }
+}
+
+/* Seller summary flex row */
+.seller-summary-flex {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.seller-summary-flex-item {
+  flex: 1;
+  min-width: 0;
+}
+.seller-summary-flex-item-right {
+  text-align: right;
+  min-width: 0;
+}
+@media screen and (max-width: 749px) {
+  .seller-summary-flex-item,
+  .seller-summary-flex-item-right {
+    flex: 1 1 100%;
+    width: 100%;
+    text-align: left;
+  }
+}
+
+/* Table wrapper widths */
+.table-wrap-sm  { max-width: 560px; }
+.table-wrap-md  { max-width: 680px; }
+.table-wrap-lg  { max-width: 900px; }
+@media screen and (max-width: 749px) {
+  .table-wrap-sm,
+  .table-wrap-md,
+  .table-wrap-lg { max-width: 100%; }
+}
+
+/* Form wrapper widths */
+.form-wrap-sm   { max-width: 520px; }
+.form-wrap-md   { max-width: 560px; }
+.form-wrap-lg   { max-width: 720px; }
+.form-wrap-xl   { max-width: 1040px; }
+@media screen and (max-width: 749px) {
+  .form-wrap-sm,
+  .form-wrap-md,
+  .form-wrap-lg,
+  .form-wrap-xl { max-width: 100%; }
+}
+
+/* Note card widths */
+.note-card-sm   { max-width: 720px; margin-left: auto; margin-right: auto; text-align: center; }
+.note-card-md   { max-width: 900px; margin-left: auto; margin-right: auto; text-align: center; }
+.note-card-lg   { max-width: 980px; margin-left: auto; margin-right: auto; text-align: center; }
+@media screen and (max-width: 749px) {
+  .note-card-sm,
+  .note-card-md,
+  .note-card-lg { max-width: 100%; }
+}
+
+/* Input sizing */
+.input-rate     { max-width: 120px; }
+
+/* Table cell ellipsis */
+.cell-ellipsis {
+  max-width: 250px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media screen and (max-width: 749px) {
+  .cell-ellipsis {
+    max-width: 100%;
+    white-space: normal;
+    word-break: break-word;
+  }
+}
+
+/* Login wrapper */
+.login-wrap-sm {
+  max-width: 400px;
+  margin: 0 auto;
+  padding: 5% 0 32px;
+  min-height: auto;
+}
+.login-card-sm {
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+/* Table header min-width */
+.th-min {
+  min-width: 50px;
+}
+
+/* Centered margin utilities */
+.m-center-auto {
+  margin-left: auto;
+  margin-right: auto;
+}
+.mb-20 {
+  margin-bottom: 20px;
+}
+.mt-18 {
+  margin-top: 18px;
+}
+.mt-14 {
+  margin-top: 14px;
+}
+.hidden {
+  display: none;
+}

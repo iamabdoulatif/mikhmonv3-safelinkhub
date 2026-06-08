@@ -281,7 +281,7 @@ if (!function_exists('mikhmon_hotspot_account_key')) {
     return mikhmon_hotspot_assignment_base_comment($comment);
   }
 
-  function mikhmon_hotspot_clear_account_footprints($api, $hotspotUsers, $ipBindings, $session, $role, $accountKey, $routerUsers = array(), $hardDelete = true)
+  function mikhmon_hotspot_clear_account_footprints($api, $hotspotUsers, $ipBindings, $session, $role, $accountKey, $routerUsers = array(), $hardDelete = false)
   {
     if (!is_object($api)) {
       return false;

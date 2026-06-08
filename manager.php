@@ -975,8 +975,8 @@ if ($manager_logged_in && $action === 'accounting' && isset($_POST['send_account
 
 <?php if (!$manager_logged_in): ?>
 <!-- ══════════════════════════ PAGE DE CONNEXION ═══════════════════════════ -->
-<div class="portal-auth-wrap" style="max-width:400px;margin:0 auto;padding:5% 0 32px;min-height:auto;">
-  <div class="login-card card portal-auth-card portal-auth-card-sm" style="width:100%;max-width:400px;margin:0 auto;">
+<div class="portal-auth-wrap login-wrap-sm">
+  <div class="login-card card portal-auth-card portal-auth-card-sm login-card-sm">
     <div class="card-header text-center">
       <h3><?= isset($_please_login) ? $_please_login : 'Veuillez vous connecter' ?></h3>
     </div>
@@ -1863,7 +1863,7 @@ if (in_array($action, ['overview','accounting'])) {
     <!-- Récapitulatif total par profil -->
     <?php if (!empty($stockByProfile)): ?>
     <h4 style="margin-bottom:10px;"><i class="fa fa-tags"></i> Total par profil</h4>
-    <div class="table-responsive" style="max-width:680px;margin-bottom:20px;">
+    <div class="table-responsive table-wrap-md mb-20">
     <table class="table table-bordered portal-table-min-sm" style="font-size:13px;">
       <thead class="thead-light">
         <tr>
@@ -1899,7 +1899,7 @@ if (in_array($action, ['overview','accounting'])) {
 
     <!-- Stock global par vendeur -->
     <h4 style="margin-bottom:10px;"><i class="fa fa-archive"></i> <?= isset($_transfer_available) ? $_transfer_available : 'Available stock' ?></h4>
-    <div class="table-responsive" style="max-width:580px;margin-bottom:20px;">
+    <div class="table-responsive table-wrap-sm mb-20">
     <table class="table table-bordered portal-table-min-sm" style="font-size:13px;">
       <thead class="thead-light">
         <tr>
@@ -1970,7 +1970,7 @@ if (in_array($action, ['overview','accounting'])) {
         </table>
       </div>
       <?php if (!empty($globalStock) && !empty($managerSellersData)): ?>
-      <form method="post" action="./manager.php?action=transfer" class="portal-card-section" style="max-width:720px;margin:0 auto 8px;" id="mgrGlobalTransferForm">
+      <form method="post" action="./manager.php?action=transfer" class="portal-card-section form-wrap-lg m-center-auto mb-20" id="mgrGlobalTransferForm">
         <?= csrf_field() ?>
         <input type="hidden" name="do_global_transfer" value="1">
         <div class="portal-filter-grid">
@@ -2011,7 +2011,7 @@ if (in_array($action, ['overview','accounting'])) {
     <p style="color:#666;font-size:13px;margin-bottom:14px;">
       <i class="fa fa-info-circle"></i> <?= isset($_transfer_info) ? $_transfer_info : 'Select profile, quantity and destination vendor.' ?>
     </p>
-    <form method="post" action="./manager.php?action=transfer" style="max-width:520px;" id="mgrTransferForm">
+    <form method="post" action="./manager.php?action=transfer" class="form-wrap-sm" id="mgrTransferForm">
       <?= csrf_field() ?>
       <input type="hidden" name="do_transfer" value="1">
       <div class="admin-transfer-grid">
@@ -2385,17 +2385,17 @@ if (in_array($action, ['overview','accounting'])) {
         </div>
       </div>
 
-      <div class="portal-note-card" style="max-width:980px;margin:0 auto 18px;text-align:center;">
+      <div class="portal-note-card note-card-lg mb-20">
         <strong>Deux modes au moment de la génération :</strong>
         <span style="display:block;margin-top:6px;">attribuer immédiatement le lot à un vendeur pour impression directe, ou le garder en <b>stock gérant</b> pour le redistribuer plus tard.</span>
       </div>
 
       <?php if (empty($hotspotProfiles)): ?>
-        <div class="portal-note-card" style="max-width:900px;margin:0 auto;text-align:center;">
+        <div class="portal-note-card note-card-md">
           <i class="fa fa-warning"></i> <?= isset($_no_profile) ? $_no_profile : 'No hotspot profile available on this router.' ?>
         </div>
       <?php else: ?>
-      <form method="post" action="./hotspot/generateuser.php" class="portal-card-section portal-card-section-tight" style="max-width:1040px;margin:0 auto;">
+      <form method="post" action="./hotspot/generateuser.php" class="portal-card-section portal-card-section-tight form-wrap-xl m-center-auto">
         <?= csrf_field() ?>
         <input type="hidden" name="session" value="<?= htmlspecialchars($manager_session_name) ?>">
         <input type="hidden" name="user" value="vc">
@@ -2472,10 +2472,10 @@ if (in_array($action, ['overview','accounting'])) {
           </div>
         </div>
 
-        <div id="mgrTicketProfileInfo" class="portal-note-card" style="max-width:720px;margin:14px auto 0;text-align:center;display:none;"></div>
+        <div id="mgrTicketProfileInfo" class="portal-note-card note-card-sm mt-14 hidden"></div>
 
         <div class="portal-toolbar" style="justify-content:center;margin-top:18px;">
-          <button type="submit" class="btn bg-primary" style="min-width:240px;">
+          <button type="submit" class="btn bg-primary btn-generate">
             <i class="fa fa-bolt"></i> Générer puis imprimer
           </button>
         </div>

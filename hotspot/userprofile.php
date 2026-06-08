@@ -55,7 +55,7 @@ if (!isset($_SESSION["mikhmon"])) {
 <table id="tFilter" class="table table-bordered table-hover text-nowrap">
   <thead>
   <tr> 
-		<th style="min-width:50px;" class="text-center" >
+		<th class="th-min text-center" >
 		<?php
 	if ($countprofile < 2) {
 		echo "$countprofile item  ";
