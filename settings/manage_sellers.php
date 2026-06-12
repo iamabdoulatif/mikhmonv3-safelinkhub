@@ -44,6 +44,8 @@ $API_ms_connected  = false;
 $hotspotDefaultUsersRaw = array();
 $hotspotIpBindingRows = array();
 $routerUserRows = array();
+$restoreSalesRows = array();
+$unusedAll = array();
 
 // ── Stock de tous les vendeurs (tickets non utilisés) ────────────────────────
 $allSellerStock  = array(); // ['sellerKey']['profile'] = count
@@ -60,23 +62,20 @@ if (!empty($iphost)) {
         $hotspotIpBindingRows = $API_ms->comm("/ip/hotspot/ip-binding/print");
         $routerUserRows = $API_ms->comm("/user/print");
         $unusedAll = $API_ms->comm("/ip/hotspot/user/print", array("?uptime" => "0s"));
+        $restoreSalesRows = $API_ms->comm("/system/script/print", array("?comment" => "mikhmon"));
         if (is_array($unusedAll)) {
             foreach ($sellers_data as $sk => $sd) {
                 $allSellerStock[$sk] = array();
             }
             foreach ($unusedAll as $u) {
-                $cmt  = strtolower(trim(isset($u['comment']) ? $u['comment'] : ''));
                 $prof = isset($u['profile']) ? $u['profile'] : '(unknown)';
                 $assigned = false;
-                foreach ($sellers_data as $sk => $sd) {
-                    $sfx = '-' . strtolower($sk);
-                    if ($cmt === strtolower($sk) || substr($cmt, -strlen($sfx)) === $sfx) {
-                        if (!isset($allSellerStock[$sk][$prof])) $allSellerStock[$sk][$prof] = 0;
-                        $allSellerStock[$sk][$prof]++;
-                        $allStockUsers[] = $u;
-                        $assigned = true;
-                        break;
-                    }
+                $matchedSeller = mikhmon_comment_seller_key(isset($u['comment']) ? $u['comment'] : '', $sellers_data);
+                if ($matchedSeller !== '' && isset($allSellerStock[$matchedSeller])) {
+                    if (!isset($allSellerStock[$matchedSeller][$prof])) $allSellerStock[$matchedSeller][$prof] = 0;
+                    $allSellerStock[$matchedSeller][$prof]++;
+                    $allStockUsers[] = $u;
+                    $assigned = true;
                 }
                 // Ticket non assigné → stock global
                 if (!$assigned && isset($u['.id'])) {
@@ -107,13 +106,10 @@ if (isset($_POST['admin_transfer']) && !empty($sellers_data)) {
     } else {
         if (!isset($API_ms)) { $API_ms = new RouterosAPI(); $API_ms->debug = false; $API_ms->connect($iphost, $userhost, decrypt($passwdhost)); }
         $done = 0;
-        $srcKey = strtolower($src);
-        $sfxKey = '-' . $srcKey;
         foreach ($allStockUsers as $u) {
             if ($done >= $tqty) break;
             if ((isset($u['profile']) && $u['profile'] === $tprof)) {
-                $cmt = strtolower(trim(isset($u['comment']) ? $u['comment'] : ''));
-                if ($cmt === $srcKey || substr($cmt, -strlen($sfxKey)) === $sfxKey) {
+                if (mikhmon_comment_seller_key(isset($u['comment']) ? $u['comment'] : '', $sellers_data) === $src) {
                     $API_ms->comm("/ip/hotspot/user/set", array(
                         ".id" => $u['.id'],
                         "comment" => mikhmon_comment_assign_seller(isset($u['comment']) ? $u['comment'] : '', $dst, $sellers_data)
@@ -159,14 +155,7 @@ if (isset($_POST['bulk_distribute']) && !empty($sellers_data)) {
         if (is_array($freshUnused)) {
             foreach ($freshUnused as $u) {
                 if (!isset($u['.id'])) continue;
-                $cmt = strtolower(trim(isset($u['comment']) ? $u['comment'] : ''));
-                $assigned = false;
-                foreach ($sellers_data as $sk => $sd) {
-                    $sfx = '-' . strtolower($sk);
-                    if ($cmt === strtolower($sk) || substr($cmt, -strlen($sfx)) === $sfx) {
-                        $assigned = true; break;
-                    }
-                }
+                $assigned = mikhmon_comment_seller_key(isset($u['comment']) ? $u['comment'] : '', $sellers_data) !== '';
                 if (!$assigned) $freshUsers[] = $u;
             }
         }
@@ -658,8 +647,21 @@ if ($API_ms_connected && isset($API_ms)) {
     if (is_array($freshRouterUserRows)) {
         $routerUserRows = $freshRouterUserRows;
     }
+    $freshRestoreSalesRows = $API_ms->comm("/system/script/print", array("?comment" => "mikhmon"));
+    if (is_array($freshRestoreSalesRows)) {
+        $restoreSalesRows = $freshRestoreSalesRows;
+    }
 }
-$restoredAccounts = mikhmon_hotspot_restored_account_records($hotspotDefaultUsersRaw, $hotspotIpBindingRows, $session, $sellers_data, $managers_data, $routerUserRows);
+$restoredAccounts = mikhmon_hotspot_restored_account_records(
+    $hotspotDefaultUsersRaw,
+    $hotspotIpBindingRows,
+    $session,
+    $sellers_data,
+    $managers_data,
+    $routerUserRows,
+    is_array($restoreSalesRows) ? $restoreSalesRows : array(),
+    is_array($unusedAll) ? $unusedAll : array()
+);
 foreach ($restoredAccounts['sellers'] as $restoredKey => $restoredRecord) {
     if (isset($sellers_data[$restoredKey]) || isset($managers_data[$restoredKey])) {
         continue;

@@ -84,13 +84,26 @@ $seller_session_missing = false;
 $seller_session_message = '';
 $seller_router_connected = false;
 $seller_connection_error = '';
-$sellerShouldLoadRouterData = ($action !== 'dashboard');
+$sellerShouldLoadRouterData = true;
+$sellerSessionSellers = array();
+$sellerMonthlySalesByVendor = array();
+$sellerMonthlySalesTotal = 0;
 date_default_timezone_set('UTC');
 
 if ($seller_logged_in) {
     $sellerUsername      = $_SESSION['seller_username'];
     $sellerName          = $_SESSION['seller_name'];
     $seller_session_name = $_SESSION['seller_session'];
+    foreach ($sellers_data as $sk => $sd) {
+        $sellerSession = isset($sd['session']) ? trim((string)$sd['session']) : '';
+        if ($sellerSession === '' || $sellerSession === $seller_session_name) {
+            $sellerSessionSellers[$sk] = $sd;
+            $sellerMonthlySalesByVendor[$sk] = array(
+                'name' => isset($sd['name']) ? $sd['name'] : $sk,
+                'count' => 0,
+            );
+        }
+    }
 
     // Charger la config du routeur lié à ce vendeur
     include('./include/config.php');
@@ -122,6 +135,15 @@ if ($seller_logged_in) {
 
         // Récupérer tous les scripts de vente
         $getSales = $API->comm("/system/script/print", array("?comment" => "mikhmon"));
+        $sellerMonthlySalesMonthKey = strtolower(date("M")) . date("Y");
+        $sellerMonthlySalesRows = mikhmon_filter_sale_scripts($getSales, '', $sellerMonthlySalesMonthKey);
+        foreach ($sellerMonthlySalesRows as $monthlySale) {
+            $monthlySeller = mikhmon_comment_seller_key(isset($monthlySale['comment']) ? $monthlySale['comment'] : '', $sellerSessionSellers);
+            if ($monthlySeller !== '' && isset($sellerMonthlySalesByVendor[$monthlySeller])) {
+                $sellerMonthlySalesByVendor[$monthlySeller]['count']++;
+                $sellerMonthlySalesTotal++;
+            }
+        }
 
         // Filtrer par mois/jour si demandé
         if (strlen($idhr) > 0) {
@@ -379,16 +401,13 @@ if (strlen($idhr) > 0) {
 // Utilisé pour : stock board, demandes de transfert, dashboard
 $allSellersStock = [];
 if ($seller_logged_in && isset($API)) {
-    foreach ($sellers_data as $sk => $sd) {
-        $sdSession = isset($sd['session']) ? $sd['session'] : '';
-        if ($sdSession === $seller_session_name) {
-            $allSellersStock[$sk] = [
-                'name'    => isset($sd['name']) ? $sd['name'] : $sk,
-                'stock'   => [],
-                'profiles' => [],
-                'is_self' => ($sk === $sellerUsername),
-            ];
-        }
+    foreach ($sellerSessionSellers as $sk => $sd) {
+        $allSellersStock[$sk] = [
+            'name'    => isset($sd['name']) ? $sd['name'] : $sk,
+            'stock'   => [],
+            'profiles' => [],
+            'is_self' => ($sk === $sellerUsername),
+        ];
     }
     if (count($allSellersStock) > 1 || $action === 'stock-board') {
         $unusedAllSellers = $API->comm("/ip/hotspot/user/print", ["?uptime" => "0s"]);
@@ -1742,6 +1761,51 @@ filterTicketRows();
         </div>
 
       </div>
+    </div>
+  </div>
+
+  <!-- ── Ventes mensuelles par vendeur ─────────────────────────────────── -->
+  <div class="card seller-dash-card seller-monthly-vendor-sales-card" style="margin-bottom:14px;">
+    <div class="card-header">
+      <h3><i class="fa fa-users"></i> Tickets vendus ce mois</h3>
+    </div>
+    <div class="card-body" style="padding:0;">
+      <?php if (empty($sellerMonthlySalesByVendor)): ?>
+      <div class="portal-empty-note" style="padding:14px 16px;color:#888;">
+        <i class="fa fa-info-circle"></i> Aucun vendeur disponible sur cette session.
+      </div>
+      <?php else: ?>
+      <div class="table-responsive">
+        <table class="table table-bordered dashboard-table-sm" style="margin-bottom:0;">
+          <thead class="thead-light">
+            <tr>
+              <th><i class="fa fa-user"></i> Vendeur</th>
+              <th class="text-center" style="width:180px;"><i class="fa fa-ticket"></i> Tickets vendus ce mois</th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php foreach ($sellerMonthlySalesByVendor as $vendorKey => $vendorSales): ?>
+            <?php $vendorMonthlyCount = isset($vendorSales['count']) ? (int)$vendorSales['count'] : 0; ?>
+            <tr class="seller-monthly-vendor-sales-row<?= $vendorKey === $sellerUsername ? ' seller-monthly-vendor-sales-self' : '' ?>">
+              <td data-label="Vendeur">
+                <b><?= htmlspecialchars(isset($vendorSales['name']) ? $vendorSales['name'] : $vendorKey) ?></b>
+                <small style="display:block;color:#888;"><code><?= htmlspecialchars($vendorKey) ?></code></small>
+              </td>
+              <td class="text-center" data-label="Tickets vendus ce mois">
+                <b><?= $vendorMonthlyCount ?></b> vcr
+              </td>
+            </tr>
+            <?php endforeach; ?>
+          </tbody>
+          <tfoot>
+            <tr class="seller-total-row">
+              <td><b>Total session</b></td>
+              <td class="text-center"><b><?= (int)$sellerMonthlySalesTotal ?></b> vcr</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <?php endif; ?>
     </div>
   </div>
 

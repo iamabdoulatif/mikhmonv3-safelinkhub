@@ -441,13 +441,10 @@ if ($manager_logged_in && $action === 'transfer' && isset($_POST['do_transfer'])
         $transfer_error = isset($_transfer_insufficient) ? $_transfer_insufficient : 'Insufficient stock.';
     } else {
         // Filtrer les tickets du vendeur source pour ce profil
-        $srcKey      = strtolower($src);
-        $sfxKey      = '-' . $srcKey;
         $profileUsers = array();
         foreach ($allStockUsers as $u) {
             if (!isset($u['profile']) || $u['profile'] !== $tprof) continue;
-            $cmt = strtolower(trim(isset($u['comment']) ? $u['comment'] : ''));
-            if ($cmt === $srcKey || substr($cmt, -strlen($sfxKey)) === $sfxKey) {
+            if (mikhmon_comment_seller_key(isset($u['comment']) ? $u['comment'] : '', $managerSellersData) === $src) {
                 $profileUsers[] = $u;
             }
         }

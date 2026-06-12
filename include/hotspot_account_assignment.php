@@ -356,7 +356,62 @@ if (!function_exists('mikhmon_hotspot_account_key')) {
     return $ok;
   }
 
-  function mikhmon_hotspot_restored_account_records($hotspotUsers, $ipBindings, $session, $sellersData = array(), $managersData = array(), $routerUsers = array())
+  function mikhmon_hotspot_restore_seller_from_comment($comment, $session, &$restored, &$seen, $profile = '')
+  {
+    $comment = mikhmon_hotspot_account_label($comment);
+    if ($comment === '') {
+      return;
+    }
+    $profile = trim((string) $profile);
+    if ($profile !== '') {
+      $normalizedComment = strtolower(preg_replace('/\s+/', ' ', $comment));
+      $normalizedProfile = strtolower(preg_replace('/\s+/', ' ', $profile));
+      if ($normalizedComment === $normalizedProfile || substr($normalizedComment, -strlen('-' . $normalizedProfile)) === '-' . $normalizedProfile) {
+        return;
+      }
+    }
+
+    $assignment = mikhmon_hotspot_assignment_from_comment($comment, $session);
+    if ($assignment !== null) {
+      if ($assignment['role'] !== 'seller' || isset($seen[$assignment['account_key']])) {
+        return;
+      }
+      $name = mikhmon_hotspot_account_label($assignment['base_comment']);
+      if ($name === '') {
+        $name = ucfirst(strtolower($assignment['account_key']));
+      }
+      $restored['sellers'][$assignment['account_key']] = array(
+        'password' => '',
+        'name' => $name,
+        'session' => $session,
+        'commission' => 10,
+        'historical' => true,
+      );
+      $seen[$assignment['account_key']] = true;
+      return;
+    }
+
+    $candidate = $comment;
+    $separator = strrpos($comment, '-');
+    if ($separator !== false) {
+      $candidate = substr($comment, $separator + 1);
+    }
+    $candidate = mikhmon_hotspot_account_key($candidate);
+    if ($candidate === '' || isset($seen[$candidate])) {
+      return;
+    }
+
+    $restored['sellers'][$candidate] = array(
+      'password' => '',
+      'name' => ucfirst(strtolower($candidate)) . ' (historique)',
+      'session' => $session,
+      'commission' => 10,
+      'historical' => true,
+    );
+    $seen[$candidate] = true;
+  }
+
+  function mikhmon_hotspot_restored_account_records($hotspotUsers, $ipBindings, $session, $sellersData = array(), $managersData = array(), $routerUsers = array(), $sales = array(), $stockUsers = array())
   {
     $restored = array('sellers' => array(), 'managers' => array());
     $seen = array();
@@ -463,6 +518,38 @@ if (!function_exists('mikhmon_hotspot_account_key')) {
         $restored['managers'][$assignment['account_key']] = $record;
       }
       $seen[$assignment['account_key']] = true;
+    }
+
+    $saleRows = function_exists('mikhmon_unique_sale_scripts') ? mikhmon_unique_sale_scripts($sales) : (array) $sales;
+    foreach ($saleRows as $saleRow) {
+      if (!is_array($saleRow)) {
+        continue;
+      }
+      $sale = (isset($saleRow['date']) && isset($saleRow['comment']))
+        ? $saleRow
+        : (function_exists('mikhmon_parse_sale_script') ? mikhmon_parse_sale_script($saleRow) : $saleRow);
+      mikhmon_hotspot_restore_seller_from_comment(
+        isset($sale['comment']) ? $sale['comment'] : '',
+        $session,
+        $restored,
+        $seen,
+        isset($sale['profile']) ? $sale['profile'] : ''
+      );
+    }
+
+    foreach ((array) $stockUsers as $stockUser) {
+      if (!is_array($stockUser)) {
+        continue;
+      }
+      $uptime = isset($stockUser['uptime']) ? trim((string) $stockUser['uptime']) : '0s';
+      if ($uptime !== '' && $uptime !== '0s') {
+        continue;
+      }
+      $profile = isset($stockUser['profile']) ? trim((string) $stockUser['profile']) : '';
+      if ($profile === '' || strtolower($profile) === 'default') {
+        continue;
+      }
+      mikhmon_hotspot_restore_seller_from_comment(isset($stockUser['comment']) ? $stockUser['comment'] : '', $session, $restored, $seen, $profile);
     }
 
     return $restored;
