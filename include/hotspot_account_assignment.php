@@ -411,7 +411,7 @@ if (!function_exists('mikhmon_hotspot_account_key')) {
     $seen[$candidate] = true;
   }
 
-  function mikhmon_hotspot_restored_account_records($hotspotUsers, $ipBindings, $session, $sellersData = array(), $managersData = array(), $routerUsers = array(), $sales = array(), $stockUsers = array())
+  function mikhmon_hotspot_restored_account_records($hotspotUsers, $ipBindings, $session, $sellersData = array(), $managersData = array(), $routerUsers = array(), $sales = array(), $stockUsers = array(), $suppressedSellers = array(), $suppressedManagers = array())
   {
     $restored = array('sellers' => array(), 'managers' => array());
     $seen = array();
@@ -423,6 +423,18 @@ if (!function_exists('mikhmon_hotspot_account_key')) {
       }
     }
     foreach ((array) $managersData as $key => $record) {
+      $cleanKey = mikhmon_hotspot_account_key($key);
+      if ($cleanKey !== '') {
+        $seen[$cleanKey] = true;
+      }
+    }
+    foreach ((array) $suppressedSellers as $key) {
+      $cleanKey = mikhmon_hotspot_account_key($key);
+      if ($cleanKey !== '') {
+        $seen[$cleanKey] = true;
+      }
+    }
+    foreach ((array) $suppressedManagers as $key) {
       $cleanKey = mikhmon_hotspot_account_key($key);
       if ($cleanKey !== '') {
         $seen[$cleanKey] = true;

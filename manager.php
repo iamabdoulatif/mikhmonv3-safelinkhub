@@ -165,7 +165,7 @@ if ($manager_logged_in) {
     $managerSellersData = mikhmon_filter_session_sellers($sellers_data, $manager_session_name);
 
     date_default_timezone_set('UTC');
-    $managerShouldLoadRouterData = ($action !== 'dashboard');
+    $managerShouldLoadRouterData = true;
     if (!$manager_session_missing && $managerShouldLoadRouterData) {
         $API = new RouterosAPI();
         $API->debug = false;

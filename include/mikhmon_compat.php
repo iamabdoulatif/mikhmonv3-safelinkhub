@@ -484,9 +484,22 @@ if (!function_exists('mikhmon_month_map')) {
 
   function mikhmon_accounting_seller_key($comment, $sellersData)
   {
-    $comment = strtolower(trim((string) $comment));
+    $rawComment = trim((string) $comment);
+    if (function_exists('mikhmon_comment_seller_key')) {
+      return mikhmon_comment_seller_key($rawComment, $sellersData);
+    }
+
+    $comment = strtolower($rawComment);
     if ($comment === '' || !is_array($sellersData)) {
       return '';
+    }
+
+    if (preg_match('/MIKHMON_ACCOUNT\s+role=([^\s|]+)\s+session=([^\s|]+)\s+account=([^\s|]+)/i', $rawComment, $matches)) {
+      $role = strtolower(trim($matches[1]));
+      $account = preg_replace('/[^a-zA-Z0-9_]/', '', trim($matches[3]));
+      if (($role === 'seller' || $role === 'vendeur') && $account !== '' && isset($sellersData[$account])) {
+        return $account;
+      }
     }
 
     foreach ($sellersData as $sellerKey => $sellerData) {
@@ -494,10 +507,22 @@ if (!function_exists('mikhmon_month_map')) {
       if ($sellerKey === '') {
         continue;
       }
-      $normalizedSeller = strtolower($sellerKey);
-      $suffix = '-' . $normalizedSeller;
-      if ($comment === $normalizedSeller || substr($comment, -strlen($suffix)) === $suffix) {
-        return $sellerKey;
+      $aliases = array($sellerKey);
+      if (is_array($sellerData) && isset($sellerData['name'])) {
+        $sellerName = trim((string) $sellerData['name']);
+        if ($sellerName !== '') {
+          $aliases[] = $sellerName;
+        }
+      }
+      foreach ($aliases as $alias) {
+        $normalizedSeller = strtolower(preg_replace('/\s+/', ' ', trim((string) $alias)));
+        if ($normalizedSeller === '') {
+          continue;
+        }
+        $suffix = '-' . $normalizedSeller;
+        if ($comment === $normalizedSeller || substr($comment, -strlen($suffix)) === $suffix) {
+          return $sellerKey;
+        }
       }
     }
 

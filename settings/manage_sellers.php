@@ -33,6 +33,7 @@ if (empty($mikhmon_router_session_valid)) {
 
 $sellers_file  = './include/sellers_config.php';
 $managers_file = './include/managers_config.php';
+$deleted_accounts_file = './include/deleted_accounts_config.php';
 $msg           = '';
 $msg_mgr       = '';
 $transfer_msg   = '';
@@ -46,6 +47,68 @@ $hotspotIpBindingRows = array();
 $routerUserRows = array();
 $restoreSalesRows = array();
 $unusedAll = array();
+$deleted_accounts_data = array();
+if (is_file($deleted_accounts_file)) {
+    include($deleted_accounts_file);
+}
+if (!isset($deleted_accounts_data) || !is_array($deleted_accounts_data)) {
+    $deleted_accounts_data = array();
+}
+foreach (array('sellers', 'managers') as $deletedAccountRole) {
+    if (!isset($deleted_accounts_data[$deletedAccountRole]) || !is_array($deleted_accounts_data[$deletedAccountRole])) {
+        $deleted_accounts_data[$deletedAccountRole] = array();
+    }
+}
+
+function mikhmon_deleted_account_session_keys($deletedAccounts, $role, $sessionName) {
+    $role = $role === 'managers' ? 'managers' : 'sellers';
+    $sessionName = trim((string)$sessionName);
+    if (!isset($deletedAccounts[$role]) || !is_array($deletedAccounts[$role]) || $sessionName === '') {
+        return array();
+    }
+    $sessionRows = isset($deletedAccounts[$role][$sessionName]) && is_array($deletedAccounts[$role][$sessionName])
+        ? $deletedAccounts[$role][$sessionName]
+        : array();
+    $keys = array();
+    foreach ($sessionRows as $key => $deletedAt) {
+        $cleanKey = mikhmon_account_key($key);
+        if ($cleanKey !== '') {
+            $keys[] = $cleanKey;
+        }
+    }
+    return $keys;
+}
+
+function mikhmon_store_deleted_account_marker($file, &$deletedAccounts, $role, $sessionName, $accountKey) {
+    $role = $role === 'managers' ? 'managers' : 'sellers';
+    $sessionName = trim((string)$sessionName);
+    $accountKey = mikhmon_account_key($accountKey);
+    if ($sessionName === '' || $accountKey === '') {
+        return false;
+    }
+    if (!isset($deletedAccounts[$role]) || !is_array($deletedAccounts[$role])) {
+        $deletedAccounts[$role] = array();
+    }
+    if (!isset($deletedAccounts[$role][$sessionName]) || !is_array($deletedAccounts[$role][$sessionName])) {
+        $deletedAccounts[$role][$sessionName] = array();
+    }
+    $deletedAccounts[$role][$sessionName][$accountKey] = date('c');
+    return mikhmon_replace_assignment_line_in_file($file, 'deleted_accounts_data', $role, $deletedAccounts[$role]);
+}
+
+function mikhmon_clear_deleted_account_marker($file, &$deletedAccounts, $role, $sessionName, $accountKey) {
+    $role = $role === 'managers' ? 'managers' : 'sellers';
+    $sessionName = trim((string)$sessionName);
+    $accountKey = mikhmon_account_key($accountKey);
+    if ($sessionName === '' || $accountKey === '' || !isset($deletedAccounts[$role][$sessionName][$accountKey])) {
+        return true;
+    }
+    unset($deletedAccounts[$role][$sessionName][$accountKey]);
+    if (empty($deletedAccounts[$role][$sessionName])) {
+        unset($deletedAccounts[$role][$sessionName]);
+    }
+    return mikhmon_replace_assignment_line_in_file($file, 'deleted_accounts_data', $role, $deletedAccounts[$role]);
+}
 
 // ── Stock de tous les vendeurs (tickets non utilisés) ────────────────────────
 $allSellerStock  = array(); // ['sellerKey']['profile'] = count
@@ -322,6 +385,7 @@ if (isset($_POST['assign_hotspot_account'])) {
                         if (!mikhmon_hotspot_routeros_response_ok($routerUpdate)) {
                             $msg = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> MikroTik a refusé la mise à jour du mot de passe ou du commentaire.</div>';
                         } elseif (mikhmon_replace_assignment_line_in_file($sellers_file, 'sellers_data', $accountKey, $record)) {
+                            mikhmon_clear_deleted_account_marker($deleted_accounts_file, $deleted_accounts_data, 'sellers', $session, $accountKey);
                             $sellers_data[$accountKey] = $record;
                             $allSellerStock[$accountKey] = isset($allSellerStock[$accountKey]) ? $allSellerStock[$accountKey] : array();
                             $msg = '<div class="bg-success" style="padding:8px;border-radius:5px;"><i class="fa fa-check"></i> Utilisateur Hotspot <b>' . htmlspecialchars($candidate['username']) . '</b> assigné comme vendeur <b>' . htmlspecialchars($accountKey) . '</b>. Empreinte MikroTik mise à jour.</div>';
@@ -341,6 +405,7 @@ if (isset($_POST['assign_hotspot_account'])) {
                         if (!mikhmon_hotspot_routeros_response_ok($routerUpdate)) {
                             $msg_mgr = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> MikroTik a refusé la mise à jour du mot de passe ou du commentaire.</div>';
                         } elseif (mikhmon_replace_assignment_line_in_file($managers_file, 'managers_data', $accountKey, $record)) {
+                            mikhmon_clear_deleted_account_marker($deleted_accounts_file, $deleted_accounts_data, 'managers', $session, $accountKey);
                             $managers_data[$accountKey] = $record;
                             $msg_mgr = '<div class="bg-success" style="padding:8px;border-radius:5px;"><i class="fa fa-check"></i> Utilisateur Hotspot <b>' . htmlspecialchars($candidate['username']) . '</b> assigné comme gérant <b>' . htmlspecialchars($accountKey) . '</b>. Empreinte MikroTik mise à jour.</div>';
                         } else {
@@ -385,6 +450,7 @@ if (isset($_POST['add_seller'])) {
               'session' => $new_session,
               'commission' => 10,
           )), FILE_APPEND | LOCK_EX) !== false) {
+            mikhmon_clear_deleted_account_marker($deleted_accounts_file, $deleted_accounts_data, 'sellers', $new_session, $new_user);
             $msg = '<div class="bg-success" style="padding:8px;border-radius:5px;"><i class="fa fa-check"></i> ' . $_seller . ' <b>' . $new_user . '</b> OK.<br><small>' . $_seller_id . ': <b>' . htmlspecialchars($new_user) . '</b> | ' . $_password . ': <b>' . htmlspecialchars($new_pass) . '</b></small></div>';
             include($sellers_file);
         } else {
@@ -397,13 +463,21 @@ if (isset($_POST['add_seller'])) {
 if (isset($_POST['delete_seller'])) {
     $del = preg_replace('/[^a-zA-Z0-9_]/', '', $_POST['delete_seller']);
     if ($del != '') {
+        $deleteSellerIsHistorical = !empty($sellers_data[$del]['historical']);
         if (!isset($API_ms) || !$API_ms_connected) {
             $API_ms = new RouterosAPI();
             $API_ms->debug = false;
             $API_ms_connected = $API_ms->connect($iphost, $userhost, decrypt($passwdhost));
         }
         if (!$API_ms_connected) {
-            $msg = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> Connexion MikroTik impossible : suppression annulée pour éviter la restauration automatique du compte.</div>';
+            if ($deleteSellerIsHistorical) {
+                mikhmon_store_deleted_account_marker($deleted_accounts_file, $deleted_accounts_data, 'sellers', $session, $del);
+                mikhmon_delete_assignment_line_in_file($sellers_file, 'sellers_data', $del);
+                $msg = '<div class="bg-warning" style="padding:8px;border-radius:5px;"><i class="fa fa-trash"></i> ' . $_seller . ' historique <b>' . htmlspecialchars($del) . '</b>.</div>';
+                unset($sellers_data[$del], $allSellerStock[$del]);
+            } else {
+                $msg = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> Connexion MikroTik impossible : suppression annulée pour éviter la restauration automatique du compte.</div>';
+            }
         } else {
             $deleteHotspotUsers = $API_ms->comm("/ip/hotspot/user/print");
             $deleteIpBindings = $API_ms->comm("/ip/hotspot/ip-binding/print");
@@ -412,6 +486,7 @@ if (isset($_POST['delete_seller'])) {
             if (!$clearedFootprints) {
                 $msg = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> MikroTik a refusé le retrait de l’empreinte du vendeur. Suppression annulée.</div>';
             } else {
+                mikhmon_store_deleted_account_marker($deleted_accounts_file, $deleted_accounts_data, 'sellers', $session, $del);
                 mikhmon_delete_assignment_line_in_file($sellers_file, 'sellers_data', $del);
                 $msg = '<div class="bg-warning" style="padding:8px;border-radius:5px;"><i class="fa fa-trash"></i> ' . $_seller . ' <b>' . htmlspecialchars($del) . '</b>.</div>';
                 unset($sellers_data[$del], $allSellerStock[$del]);
@@ -445,6 +520,7 @@ if (isset($_POST['update_seller_account'])) {
         );
 
         if (mikhmon_replace_assignment_line_in_file($sellers_file, 'sellers_data', $new_user, $sellerRecord, $old_user)) {
+            mikhmon_clear_deleted_account_marker($deleted_accounts_file, $deleted_accounts_data, 'sellers', $sellerRecord['session'], $new_user);
             unset($sellers_data[$old_user]);
             $sellers_data[$new_user] = $sellerRecord;
             if ($new_user !== $old_user && isset($allSellerStock[$old_user])) {
@@ -533,6 +609,7 @@ if (isset($_POST['add_manager'])) {
               'name' => $nmn,
               'session' => $nms,
           )), FILE_APPEND | LOCK_EX) !== false) {
+            mikhmon_clear_deleted_account_marker($deleted_accounts_file, $deleted_accounts_data, 'managers', $nms, $nmu);
             $msg_mgr = '<div class="bg-success" style="padding:8px;border-radius:5px;"><i class="fa fa-check"></i> ' . (isset($_manager) ? $_manager : 'Manager') . ' <b>' . $nmu . '</b> OK.<br><small>' . $_seller_id . ': <b>' . htmlspecialchars($nmu) . '</b> | ' . $_password . ': <b>' . htmlspecialchars($nmp) . '</b></small></div>';
             include($managers_file);
         } else {
@@ -545,13 +622,21 @@ if (isset($_POST['delete_manager'])) {
     $force_active_tab = 'managers';
     $dm = preg_replace('/[^a-zA-Z0-9_]/', '', $_POST['delete_manager']);
     if ($dm != '') {
+        $deleteManagerIsHistorical = !empty($managers_data[$dm]['historical']);
         if (!isset($API_ms) || !$API_ms_connected) {
             $API_ms = new RouterosAPI();
             $API_ms->debug = false;
             $API_ms_connected = $API_ms->connect($iphost, $userhost, decrypt($passwdhost));
         }
         if (!$API_ms_connected) {
-            $msg_mgr = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> Connexion MikroTik impossible : suppression annulée pour éviter la restauration automatique du compte.</div>';
+            if ($deleteManagerIsHistorical) {
+                mikhmon_store_deleted_account_marker($deleted_accounts_file, $deleted_accounts_data, 'managers', $session, $dm);
+                mikhmon_delete_assignment_line_in_file($managers_file, 'managers_data', $dm);
+                $msg_mgr = '<div class="bg-warning" style="padding:8px;border-radius:5px;"><i class="fa fa-trash"></i> ' . (isset($_manager) ? $_manager : 'Manager') . ' historique <b>' . htmlspecialchars($dm) . '</b>.</div>';
+                unset($managers_data[$dm]);
+            } else {
+                $msg_mgr = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> Connexion MikroTik impossible : suppression annulée pour éviter la restauration automatique du compte.</div>';
+            }
         } else {
             $deleteHotspotUsers = $API_ms->comm("/ip/hotspot/user/print");
             $deleteIpBindings = $API_ms->comm("/ip/hotspot/ip-binding/print");
@@ -560,6 +645,7 @@ if (isset($_POST['delete_manager'])) {
             if (!$clearedFootprints) {
                 $msg_mgr = '<div class="bg-danger" style="padding:8px;border-radius:5px;"><i class="fa fa-ban"></i> MikroTik a refusé le retrait de l’empreinte du gérant. Suppression annulée.</div>';
             } else {
+                mikhmon_store_deleted_account_marker($deleted_accounts_file, $deleted_accounts_data, 'managers', $session, $dm);
                 mikhmon_delete_assignment_line_in_file($managers_file, 'managers_data', $dm);
                 $msg_mgr = '<div class="bg-warning" style="padding:8px;border-radius:5px;"><i class="fa fa-trash"></i> ' . (isset($_manager) ? $_manager : 'Manager') . ' <b>' . htmlspecialchars($dm) . '</b>.</div>';
                 unset($managers_data[$dm]);
@@ -591,6 +677,7 @@ if (isset($_POST['update_manager_account'])) {
         );
 
         if (mikhmon_replace_assignment_line_in_file($managers_file, 'managers_data', $new_manager, $managerRecord, $old_manager)) {
+            mikhmon_clear_deleted_account_marker($deleted_accounts_file, $deleted_accounts_data, 'managers', $managerRecord['session'], $new_manager);
             unset($managers_data[$old_manager]);
             $managers_data[$new_manager] = $managerRecord;
             $msg_mgr = '<div class="bg-success" style="padding:8px;border-radius:5px;"><i class="fa fa-check"></i> ' . (isset($_manager) ? $_manager : 'Manager') . ' <b>' . htmlspecialchars($new_manager) . '</b> OK.</div>';
@@ -660,7 +747,9 @@ $restoredAccounts = mikhmon_hotspot_restored_account_records(
     $managers_data,
     $routerUserRows,
     is_array($restoreSalesRows) ? $restoreSalesRows : array(),
-    is_array($unusedAll) ? $unusedAll : array()
+    is_array($unusedAll) ? $unusedAll : array(),
+    mikhmon_deleted_account_session_keys($deleted_accounts_data, 'sellers', $session),
+    mikhmon_deleted_account_session_keys($deleted_accounts_data, 'managers', $session)
 );
 foreach ($restoredAccounts['sellers'] as $restoredKey => $restoredRecord) {
     if (isset($sellers_data[$restoredKey]) || isset($managers_data[$restoredKey])) {
