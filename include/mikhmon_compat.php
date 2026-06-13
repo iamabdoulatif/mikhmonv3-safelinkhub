@@ -919,6 +919,7 @@ if (!function_exists('mikhmon_month_map')) {
   function mikhmon_income_summary_from_scripts($scripts, $dayKey, $monthKey)
   {
     $dayKey = mikhmon_normalize_sale_date($dayKey);
+    $dayIso = mikhmon_iso_date_from_day_key($dayKey);
     $monthKey = strtolower(trim((string) $monthKey));
     $summary = array(
       'today_count' => 0,
@@ -934,6 +935,11 @@ if (!function_exists('mikhmon_month_map')) {
       }
 
       $price = mikhmon_parse_money_amount($sale['price']);
+      $saleIso = mikhmon_iso_date_from_day_key($sale['date']);
+      if ($dayIso !== '' && $saleIso !== '' && $saleIso > $dayIso) {
+        continue;
+      }
+
       $summary['month_count']++;
       $summary['month_total'] += $price;
 
@@ -1201,6 +1207,14 @@ if (!function_exists('mikhmon_month_map')) {
   function mikhmon_dashboard_income_summary($API, $dayKey, $monthlySales = null)
   {
     $dayKey = mikhmon_normalize_sale_date($dayKey);
+    $monthKey = mikhmon_sale_month_key($dayKey);
+    if (is_array($monthlySales)) {
+      $scriptSummary = mikhmon_income_summary_from_scripts($monthlySales, $dayKey, $monthKey);
+      if (mikhmon_income_summary_has_values($scriptSummary)) {
+        return $scriptSummary;
+      }
+    }
+
     mikhmon_ensure_income_counter_scheduler($API);
     $counterSummary = mikhmon_income_summary_from_counter_files($API, $dayKey);
     if (mikhmon_income_summary_has_values($counterSummary)) {
@@ -1219,7 +1233,6 @@ if (!function_exists('mikhmon_month_map')) {
       return $counterSummary;
     }
 
-    $monthKey = mikhmon_sale_month_key($dayKey);
     $scripts = is_array($monthlySales) ? $monthlySales : mikhmon_fetch_sales_by_month($API, $monthKey);
     $scriptSummary = mikhmon_income_summary_from_scripts($scripts, $dayKey, $monthKey);
     if (mikhmon_income_summary_has_values($scriptSummary)) {

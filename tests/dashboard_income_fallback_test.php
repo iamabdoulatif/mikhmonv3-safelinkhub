@@ -93,6 +93,38 @@ if ($summary['today_count'] !== 3 || $summary['today_total'] !== 4500.0
     exit(1);
 }
 
+$reportSales = array(
+    array(
+        'name' => 'jun/05/2026-|-10:00:00-|-u1-|-200-|-10.0.0.2-|-AA-|-1d-|-01-JOUR-|-vc-1',
+        'source' => 'jun/05/2026',
+        'owner' => 'jun2026',
+        'comment' => 'mikhmon',
+    ),
+    array(
+        'name' => 'jun/06/2026-|-11:00:00-|-u2-|-500-|-10.0.0.3-|-BB-|-5d-|-05-JOURS-|-vc-2',
+        'source' => 'jun/06/2026',
+        'owner' => 'jun2026',
+        'comment' => 'mikhmon',
+    ),
+    array(
+        'name' => 'jun/14/2026-|-11:00:00-|-future-|-900-|-10.0.0.4-|-CC-|-1d-|-01-JOUR-|-vc-future',
+        'source' => 'jun/14/2026',
+        'owner' => 'jun2026',
+        'comment' => 'mikhmon',
+    ),
+);
+$summary = mikhmon_dashboard_income_summary(new DashboardIncomeFallbackApiStub($counterValues), 'jun/05/2026', $reportSales);
+if ($summary['today_count'] !== 1 || $summary['today_total'] !== 200.0
+    || $summary['month_count'] !== 1 || $summary['month_total'] !== 200.0) {
+    fwrite(STDERR, "dashboard revenue must follow the selling report when report rows are available\n");
+    exit(1);
+}
+$summary = mikhmon_dashboard_income_summary(new DashboardIncomeFallbackApiStub($counterValues), 'jun/13/2026', $reportSales);
+if ($summary['month_count'] !== 2 || $summary['month_total'] !== 700.0) {
+    fwrite(STDERR, "dashboard monthly revenue must stop at the current router day\n");
+    exit(1);
+}
+
 $partialCounterValues = array(
     'mikhmon-income-day-jun2026-05-count.txt' => '0',
     'mikhmon-income-day-jun2026-05-total.txt' => '0',

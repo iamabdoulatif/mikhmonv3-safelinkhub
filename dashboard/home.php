@@ -239,8 +239,9 @@ if (!isset($_SESSION["mikhmon"])) {
   $revenueForecast = null;
   if ($livereport != "disable") {
     $currentDayKey = $clockDayKey;
-    $cachedMonthlySales = ($monthlySalesMonthKey === mikhmon_sale_month_key($clockDayKey)) ? $monthlySales : null;
-    $incomeSummary = mikhmon_dashboard_income_summary($API, $clockDayKey, $cachedMonthlySales);
+    $currentMonthKey = mikhmon_sale_month_key($clockDayKey);
+    $reportMonthlySales = mikhmon_fetch_sales_by_month($API, $currentMonthKey);
+    $incomeSummary = mikhmon_dashboard_income_summary($API, $clockDayKey, $reportMonthlySales);
     $incomeTodayCount = $incomeSummary['today_count'];
     $incomeTodayTotal = $incomeSummary['today_total'];
     $incomeMonthCount = $incomeSummary['month_count'];
@@ -255,7 +256,7 @@ if (!isset($_SESSION["mikhmon"])) {
     $_SESSION[$session.'dincome'] = $incomeTodayFormatted;
     $_SESSION[$session.'mincome'] = $incomeMonthFormatted;
 
-    $revenueForecast = mikhmon_revenue_forecast($API, $clockDayKey, 7, $cachedMonthlySales);
+    $revenueForecast = mikhmon_revenue_forecast($API, $clockDayKey, 7, $reportMonthlySales);
   }
 /*
 // get selling report
