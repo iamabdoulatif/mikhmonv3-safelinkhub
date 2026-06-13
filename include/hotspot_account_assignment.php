@@ -675,7 +675,19 @@ if (!function_exists('mikhmon_hotspot_account_key')) {
       if ($address !== '') {
         $attributes['address'] = $address;
       }
-      $response = $api->comm('/user/add', $attributes);
+
+      // Un compte gérant/vendeur précédemment supprimé peut laisser un
+      // utilisateur RouterOS résiduel (la suppression ne fait que retirer
+      // le marqueur MIKHMON_ACCOUNT du commentaire). Dans ce cas /user/add
+      // échoue avec "user with the same name already exists" : on met alors
+      // à jour ce compte existant plutôt que de remonter une erreur.
+      $existingUsers = $api->comm('/user/print', array('?name' => $username));
+      $existingUser = (is_array($existingUsers) && isset($existingUsers[0]['.id'])) ? $existingUsers[0] : null;
+      if ($existingUser !== null) {
+        $response = $api->comm('/user/set', array_merge(array('.id' => $existingUser['.id']), $attributes));
+      } else {
+        $response = $api->comm('/user/add', $attributes);
+      }
     }
 
     if (!mikhmon_hotspot_routeros_response_ok($response)) {

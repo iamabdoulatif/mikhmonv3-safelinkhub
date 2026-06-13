@@ -18,6 +18,22 @@ if ($start === false || $end === false || $end <= $start) {
 
 $block = substr($manage, $start, $end - $start);
 
+if (strpos($manage, '$displaySellersData = function_exists(\'mikhmon_filter_display_sellers\')') === false) {
+    fwrite(STDERR, "admin sellers page must build a display-only seller list without historical accounts\n");
+    exit(1);
+}
+
+if (strpos($block, 'foreach ($displaySellersData as $su => $sd)') === false
+    || strpos($block, 'foreach ($sellers_data as $su => $sd)') !== false) {
+    fwrite(STDERR, "registered sellers block must render display sellers, not raw sellers_data\n");
+    exit(1);
+}
+
+if (strpos($manage, "if (!empty(\$restoredRecord['historical']))") === false) {
+    fwrite(STDERR, "admin sellers page must not persist automatically restored historical sellers\n");
+    exit(1);
+}
+
 foreach (array(
     'registered sellers row' => 'row admin-registered-sellers-row',
     'registered seller responsive column' => 'col-6 col-box-6 admin-registered-seller-col',

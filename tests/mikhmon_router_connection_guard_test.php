@@ -19,24 +19,20 @@ if (strpos($sellerPage, '$seller_connection_error') === false || strpos($manager
   exit(1);
 }
 
-include $root . '/include/config.php';
-
-$routerSessions = array_filter(array_keys((array) $data), function ($key) {
-  return $key !== 'mikhmon';
-});
-
-if (!empty($routerSessions)) {
-  fwrite(STDERR, 'default Docker image must start with zero router sessions' . PHP_EOL);
-  exit(1);
-}
-
-foreach ((array) $data as $sessionName => $sessionData) {
-  if ($sessionName !== 'mikhmon' && is_array($sessionData) && strpos((string) ($sessionData[3] ?? ''), 'v2:') !== false) {
+$dockerfile = file_get_contents($root . '/Dockerfile');
+$mikrotikDockerfile = file_get_contents($root . '/Dockerfile.mikrotik');
+foreach (array($dockerfile, $mikrotikDockerfile) as $dockerConfigReset) {
+  if (strpos($dockerConfigReset, '$data["mikhmon"] = array ("1"=>"mikhmon<|<mikhmon","2"=>"mikhmon>|>aWNlbA==");') === false) {
+    fwrite(STDERR, 'default Docker image must start with zero router sessions' . PHP_EOL);
+    exit(1);
+  }
+  if (strpos($dockerConfigReset, '$data["Safelink"]') !== false || strpos($dockerConfigReset, "v2:") !== false) {
     fwrite(STDERR, 'Docker image router credentials must not depend on a host-local secret.key.php' . PHP_EOL);
     exit(1);
   }
 }
 
+include $root . '/include/config.php';
 if (empty($data['mikhmon'][1]) || empty($data['mikhmon'][2])) {
   fwrite(STDERR, 'default admin credentials must remain present after router session reset' . PHP_EOL);
   exit(1);

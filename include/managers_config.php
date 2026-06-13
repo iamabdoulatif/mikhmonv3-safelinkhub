@@ -7,3 +7,4 @@ if (isset($_SERVER["REQUEST_URI"]) && substr($_SERVER["REQUEST_URI"], -20) == "m
 // Format: $managers_data['username'] = array('password' => encrypt('password'), 'name' => 'Nom Affiché', 'session' => 'NomSession');
 $managers_data = array();
 $managers_data['latif'] = array('password'=>'v2:pjA4BgFC6G6SRVhKSIqAu4CyNWcEPAFUqGYQRPLeFag=','name'=>'Latif','session'=>'Safelink');
+$managers_data['manucho'] = array('password'=>'v2:JsNIHNSG5stLdsyhKudp9OZIOgb6u44HNgsqwcz+OFI=','name'=>'Manucho','session'=>'Safelink');

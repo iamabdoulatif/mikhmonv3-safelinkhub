@@ -36,7 +36,7 @@ if ($summary['total']['count'] !== 1 || $summary['total']['revenue'] !== 1000.0)
 
 $managerPage = file_get_contents(__DIR__ . '/../manager.php');
 if (strpos($managerPage, '$managerShouldLoadRouterData = true;') === false) {
-    fwrite(STDERR, "manager dashboard must load router data so sales and stock are visible\n");
+    fwrite(STDERR, "manager dashboard must load router data so seller sales and stock are visible\n");
     exit(1);
 }
 

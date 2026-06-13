@@ -60,7 +60,9 @@ if (isset($_POST['seller_login'])) {
         $_SESSION['seller_name']     = $sellers_data[$su]['name'];
         $_SESSION['seller_session']  = $sellers_data[$su]['session'];
         ob_end_clean();
-        header("Location: ./sellers.php?action=dashboard");
+        $sellerLoginRedirectActions = array('dashboard', 'sales', 'transfer', 'stock-board', 'tickets');
+        $sellerLoginRedirectAction = in_array($action, $sellerLoginRedirectActions, true) ? $action : 'dashboard';
+        header("Location: ./sellers.php?action=" . $sellerLoginRedirectAction);
         exit;
     } else {
         $login_error = '<div style="padding:8px;border-radius:5px;margin-top:8px;" class="bg-danger"><i class="fa fa-ban"></i> ' . ($_please_login ?? 'Invalid credentials') . '</div>';
@@ -85,9 +87,12 @@ $seller_session_message = '';
 $seller_router_connected = false;
 $seller_connection_error = '';
 $sellerShouldLoadRouterData = true;
+$sellerShouldLoadFullTicketData = ($action !== 'dashboard');
 $sellerSessionSellers = array();
 $sellerMonthlySalesByVendor = array();
 $sellerMonthlySalesTotal = 0;
+$sellerProfileSalesRows = array();
+$sellerLotOwnerMap = array();
 date_default_timezone_set('UTC');
 
 if ($seller_logged_in) {
@@ -97,6 +102,9 @@ if ($seller_logged_in) {
     foreach ($sellers_data as $sk => $sd) {
         $sellerSession = isset($sd['session']) ? trim((string)$sd['session']) : '';
         if ($sellerSession === '' || $sellerSession === $seller_session_name) {
+            if (mikhmon_seller_is_historical($sd)) {
+                continue;
+            }
             $sellerSessionSellers[$sk] = $sd;
             $sellerMonthlySalesByVendor[$sk] = array(
                 'name' => isset($sd['name']) ? $sd['name'] : $sk,
@@ -118,9 +126,7 @@ if ($seller_logged_in) {
     if (!$seller_session_missing && $sellerShouldLoadRouterData) {
         $API = new RouterosAPI();
         $API->debug = false;
-        $API->timeout = 2;
-        $API->attempts = 1;
-        $API->delay = 0;
+        mikhmon_configure_routeros_api($API);
     }
     if (!$seller_session_missing && $sellerShouldLoadRouterData) {
         $seller_router_connected = $API->connect($iphost, $userhost, decrypt($passwdhost));
@@ -133,10 +139,57 @@ if ($seller_logged_in) {
         $timezone    = mikhmon_safe_timezone(isset($gettimezone[0]['time-zone-name']) ? $gettimezone[0]['time-zone-name'] : 'UTC');
         date_default_timezone_set($timezone);
 
-        // Récupérer tous les scripts de vente
+        // Récupérer tous les scripts de vente. Les scripts restent la source
+        // prioritaire parce qu'ils conservent le commentaire vendeur d'origine.
         $getSales = $API->comm("/system/script/print", array("?comment" => "mikhmon"));
+        if (!is_array($getSales)) {
+            $getSales = array();
+        }
+
+        // Une seule lecture complète des utilisateurs hotspot, réutilisée pour
+        // le mapping lot→vendeur, le stock du vendeur connecté et le stock-board.
+        $allHotspotUsers = array();
+        if ($sellerShouldLoadFullTicketData) {
+            // Une lecture vide sur une table connue pour être non vide indique
+            // un timeout RouterOS silencieux : la requête précédente
+            // (/system/script/print, table volumineuse) peut avoir coupé la
+            // connexion en plein milieu, rendant les appels suivants muets sur
+            // cette même connexion. On rouvre une connexion fraîche et on
+            // retente une fois avant d'abandonner.
+            $allHotspotUsers = mikhmon_comm_with_reconnect(
+                $API,
+                "/ip/hotspot/user/print",
+                array(".proplist" => ".id,name,profile,comment,uptime"),
+                $iphost,
+                $userhost,
+                $passwdhost
+            );
+        }
+        $allAvailableHotspotUsers = array_values(array_filter($allHotspotUsers, 'mikhmon_hotspot_user_is_available'));
+
+        $sellerLotOwnerUsers = $allAvailableHotspotUsers;
+        $sellerLotOwnerMap = mikhmon_seller_lot_owner_map_from_users($sellerLotOwnerUsers, $sellers_data);
+
+        $sellerProfileSalesRows = mikhmon_filter_sale_scripts($getSales, '', '');
+        if ($sellerShouldLoadFullTicketData && empty($sellerProfileSalesRows) && function_exists('mikhmon_sales_from_used_hotspot_users')) {
+            $sellerProfileSalesRows = mikhmon_filter_sale_scripts(
+                mikhmon_sales_from_used_hotspot_users($API, '', ''),
+                '',
+                ''
+            );
+        }
+        $sellerProfileSalesRows = mikhmon_enrich_sales_with_lot_owner($sellerProfileSalesRows, $sellerLotOwnerMap, $sellers_data);
+
         $sellerMonthlySalesMonthKey = strtolower(date("M")) . date("Y");
         $sellerMonthlySalesRows = mikhmon_filter_sale_scripts($getSales, '', $sellerMonthlySalesMonthKey);
+        if ($sellerShouldLoadFullTicketData && empty($sellerMonthlySalesRows) && function_exists('mikhmon_sales_from_used_hotspot_users')) {
+            $sellerMonthlySalesRows = mikhmon_filter_sale_scripts(
+                mikhmon_sales_from_used_hotspot_users($API, '', $sellerMonthlySalesMonthKey),
+                '',
+                $sellerMonthlySalesMonthKey
+            );
+        }
+        $sellerMonthlySalesRows = mikhmon_enrich_sales_with_lot_owner($sellerMonthlySalesRows, $sellerLotOwnerMap, $sellers_data);
         foreach ($sellerMonthlySalesRows as $monthlySale) {
             $monthlySeller = mikhmon_comment_seller_key(isset($monthlySale['comment']) ? $monthlySale['comment'] : '', $sellerSessionSellers);
             if ($monthlySeller !== '' && isset($sellerMonthlySalesByVendor[$monthlySeller])) {
@@ -148,11 +201,29 @@ if ($seller_logged_in) {
         // Filtrer par mois/jour si demandé
         if (strlen($idhr) > 0) {
             $allSales = mikhmon_filter_sale_scripts($getSales, $idhr, '');
+            if ($sellerShouldLoadFullTicketData && empty($allSales) && function_exists('mikhmon_sales_from_used_hotspot_users')) {
+                $allSales = mikhmon_filter_sale_scripts(
+                    mikhmon_sales_from_used_hotspot_users($API, $idhr, ''),
+                    $idhr,
+                    ''
+                );
+            }
         } elseif (strlen($idbl) > 0) {
             $allSales = mikhmon_filter_sale_scripts($getSales, '', $idbl);
+            if ($sellerShouldLoadFullTicketData && empty($allSales) && function_exists('mikhmon_sales_from_used_hotspot_users')) {
+                $allSales = mikhmon_filter_sale_scripts(
+                    mikhmon_sales_from_used_hotspot_users($API, '', $idbl),
+                    '',
+                    $idbl
+                );
+            }
         } else {
             $allSales = mikhmon_filter_sale_scripts($getSales, '', '');
+            if (empty($allSales) && !empty($sellerProfileSalesRows)) {
+                $allSales = $sellerProfileSalesRows;
+            }
         }
+        $allSales = mikhmon_enrich_sales_with_lot_owner($allSales, $sellerLotOwnerMap, $sellers_data);
 
         // Filtrer uniquement les ventes du vendeur connecté
         foreach ($allSales as $sale) {
@@ -206,15 +277,12 @@ $sellerStock      = array(); // ['profile' => count]
 $sellerStockUsers = array(); // tous les utilisateurs non utilisés du vendeur
 
 if ($seller_logged_in && isset($API)) {
-    $unusedAll = $API->comm("/ip/hotspot/user/print", array("?uptime" => "0s"));
-    if (is_array($unusedAll)) {
-        foreach ($unusedAll as $u) {
-            if (mikhmon_comment_seller_key(isset($u['comment']) ? $u['comment'] : '', $sellers_data) === $sellerUsername) {
-                $prof = isset($u['profile']) ? $u['profile'] : '(unknown)';
-                if (!isset($sellerStock[$prof])) $sellerStock[$prof] = 0;
-                $sellerStock[$prof]++;
-                $sellerStockUsers[] = $u;
-            }
+    foreach ($allAvailableHotspotUsers as $u) {
+        if (mikhmon_comment_seller_key(isset($u['comment']) ? $u['comment'] : '', $sellers_data) === $sellerUsername) {
+            $prof = isset($u['profile']) ? $u['profile'] : '(unknown)';
+            if (!isset($sellerStock[$prof])) $sellerStock[$prof] = 0;
+            $sellerStock[$prof]++;
+            $sellerStockUsers[] = $u;
         }
     }
 }
@@ -410,15 +478,12 @@ if ($seller_logged_in && isset($API)) {
         ];
     }
     if (count($allSellersStock) > 1 || $action === 'stock-board') {
-        $unusedAllSellers = $API->comm("/ip/hotspot/user/print", ["?uptime" => "0s"]);
-        if (is_array($unusedAllSellers)) {
-            foreach ($unusedAllSellers as $u) {
-                $matchedSeller = mikhmon_comment_seller_key(isset($u['comment']) ? $u['comment'] : '', $sellers_data);
-                if ($matchedSeller !== '' && isset($allSellersStock[$matchedSeller])) {
-                    $prof = isset($u['profile']) ? $u['profile'] : '(unknown)';
-                    if (!isset($allSellersStock[$matchedSeller]['stock'][$prof])) $allSellersStock[$matchedSeller]['stock'][$prof] = 0;
-                    $allSellersStock[$matchedSeller]['stock'][$prof]++;
-                }
+        foreach ($allAvailableHotspotUsers as $u) {
+            $matchedSeller = mikhmon_comment_seller_key(isset($u['comment']) ? $u['comment'] : '', $sellers_data);
+            if ($matchedSeller !== '' && isset($allSellersStock[$matchedSeller])) {
+                $prof = isset($u['profile']) ? $u['profile'] : '(unknown)';
+                if (!isset($allSellersStock[$matchedSeller]['stock'][$prof])) $allSellersStock[$matchedSeller]['stock'][$prof] = 0;
+                $allSellersStock[$matchedSeller]['stock'][$prof]++;
             }
         }
     }
@@ -428,7 +493,7 @@ if ($seller_logged_in && isset($API)) {
         $availableStockBySeller[$sk] = $sdata['stock'];
     }
     $sellerProfileMetrics = mikhmon_seller_profile_metrics(
-        isset($getSales) ? $getSales : [],
+        !empty($sellerProfileSalesRows) ? $sellerProfileSalesRows : (isset($getSales) ? $getSales : []),
         $availableStockBySeller,
         $sellers_data
     );

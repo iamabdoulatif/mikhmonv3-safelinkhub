@@ -74,4 +74,55 @@ if ($afterTransfer['alpha']['01-JOUR']['total'] !== 103 || $afterTransfer['beta'
     exit(1);
 }
 
+$lotOwners = mikhmon_seller_lot_owner_map_from_users(array(
+    array(
+        'name' => 'A1',
+        'profile' => '03-HEURES',
+        'comment' => 'vc-465-06.08.26-03-HEURES-Alpha',
+    ),
+    array(
+        'name' => 'A2',
+        'profile' => '03-HEURES',
+        'comment' => 'vc-465-06.08.26-03-HEURES-Alpha',
+    ),
+), $sellers);
+
+$enrichedSales = mikhmon_enrich_sales_with_lot_owner(array(
+    array(
+        'date' => 'jun/08/2026',
+        'time' => '10:00:00',
+        'user' => '3h12345',
+        'price' => '200',
+        'profile' => '03-HEURES',
+        'comment' => 'vc-465-06.08.26-',
+    ),
+), $lotOwners, $sellers);
+
+if (mikhmon_comment_seller_key($enrichedSales[0]['comment'], $sellers) !== 'alpha') {
+    fwrite(STDERR, "incomplete sold lot comments must be restored from remaining stock owner\n");
+    exit(1);
+}
+
+$sellerAliases = array(
+    'Mijai' => array('name' => 'Mijai (historique)', 'historical' => true),
+    'mijai' => array('name' => 'Mijai'),
+);
+$mijaiLotOwners = mikhmon_seller_lot_owner_map_from_users(array(
+    array(
+        'name' => 'M1',
+        'profile' => '03-HEURES',
+        'comment' => 'vc-465-06.08.26-03-HEURES-Mijai historique 03-HEURES',
+    ),
+    array(
+        'name' => 'M2',
+        'profile' => '03-HEURES',
+        'comment' => 'vc-465-06.08.26-03-HEURES-Mijai 03-HEURES',
+    ),
+), $sellerAliases);
+
+if (count($mijaiLotOwners) !== 1 || reset($mijaiLotOwners) !== 'mijai') {
+    fwrite(STDERR, "historical Mijai and active Mijai lot stock must be merged for the same profile\n");
+    exit(1);
+}
+
 echo "seller_stock_profile_metrics_test passed\n";

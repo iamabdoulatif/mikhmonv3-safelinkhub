@@ -500,6 +500,9 @@ for ($i = 0; $i < $TotalReg; $i++) {
   $ubyteso = formatBytes($userdetails['bytes-out'], 2);
 
   $ucomment = $userdetails['comment'];
+  $ucommentDisplay = function_exists('mikhmon_normalize_seller_lot_comment')
+    ? mikhmon_normalize_seller_lot_comment($ucomment, $sellers_data)
+    : $ucomment;
   $udisabled = $userdetails['disabled'];
   $utimelimit = $userdetails['limit-uptime'];
   if ($utimelimit == '1s') {
@@ -552,11 +555,11 @@ for ($i = 0; $i < $TotalReg; $i++) {
   echo "<td>";
   if ($uname == "default-trial") {
   } else if (substr($ucomment,0,3) == "vc-" || substr($ucomment,0,3) == "up-") {
-    echo "<a href=./?hotspot=users&comment=" . $ucomment . "&session=" . $session . " title='Filter by " . $ucomment . "'><i class='fa fa-search'></i> ". $ucomment." ". $udatalimit ." ".$utimelimit . "</a>";
+    echo "<a href=./?hotspot=users&comment=" . $ucomment . "&session=" . $session . " title='Filter by " . $ucommentDisplay . "'><i class='fa fa-search'></i> ". $ucommentDisplay." ". $udatalimit ." ".$utimelimit . "</a>";
   } else if ($utimelimit == ' expired') {
-    echo "<a href=./?hotspot=users&profile=all&exp=1&session=" . $session . " title='Filter by expired'><i class='fa fa-search'></i> " . $ucomment." ". $udatalimit ." ".$utimelimit . "</a>";
+    echo "<a href=./?hotspot=users&profile=all&exp=1&session=" . $session . " title='Filter by expired'><i class='fa fa-search'></i> " . $ucommentDisplay." ". $udatalimit ." ".$utimelimit . "</a>";
   }else{
-    echo $ucomment.' ';
+    echo $ucommentDisplay.' ';
   }
   echo  "</td>";
 

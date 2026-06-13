@@ -74,7 +74,9 @@ if (!isset($_SESSION["mikhmon"]) && empty($_SESSION['seller_username']) && empty
     if (function_exists('mikhmon_comment_seller_key')) {
       $sellerKey = mikhmon_comment_seller_key($comment, $sellersData);
       if ($sellerKey !== '') {
-        $sellerName = trim(isset($sellersData[$sellerKey]['name']) ? (string)$sellersData[$sellerKey]['name'] : '');
+        $sellerName = function_exists('mikhmon_seller_display_label')
+          ? mikhmon_seller_display_label($sellerKey, isset($sellersData[$sellerKey]) ? $sellersData[$sellerKey] : array())
+          : trim(isset($sellersData[$sellerKey]['name']) ? (string)$sellersData[$sellerKey]['name'] : '');
         return $sellerName !== '' ? $sellerName : $sellerKey;
       }
     }
@@ -84,7 +86,9 @@ if (!isset($_SESSION["mikhmon"]) && empty($_SESSION['seller_username']) && empty
       if ($assignment !== null && $assignment['role'] === 'seller') {
         $sellerKey = $assignment['account_key'];
         if (isset($sellersData[$sellerKey])) {
-          $sellerName = trim(isset($sellersData[$sellerKey]['name']) ? (string)$sellersData[$sellerKey]['name'] : '');
+          $sellerName = function_exists('mikhmon_seller_display_label')
+            ? mikhmon_seller_display_label($sellerKey, $sellersData[$sellerKey])
+            : trim(isset($sellersData[$sellerKey]['name']) ? (string)$sellersData[$sellerKey]['name'] : '');
           return $sellerName !== '' ? $sellerName : $sellerKey;
         }
         $baseName = trim((string)$assignment['base_comment']);
@@ -101,7 +105,9 @@ if (!isset($_SESSION["mikhmon"]) && empty($_SESSION['seller_username']) && empty
 
         $suffix = '-' . $normalizedSeller;
         if ($normalizedComment === $normalizedSeller || substr($normalizedComment, -strlen($suffix)) === $suffix) {
-          $sellerName = trim(isset($sellerData['name']) ? (string)$sellerData['name'] : '');
+          $sellerName = function_exists('mikhmon_seller_display_label')
+            ? mikhmon_seller_display_label($sellerKey, $sellerData)
+            : trim(isset($sellerData['name']) ? (string)$sellerData['name'] : '');
           return $sellerName !== '' ? $sellerName : $sellerKey;
         }
       }
@@ -281,7 +287,9 @@ table.voucher {
   $price = $profileMeta['price'];
   $timelimit = $regtable['limit-uptime'];
   $getdatalimit = $regtable['limit-bytes-total'];
-  $comment = $regtable['comment'];
+  $comment = function_exists('mikhmon_normalize_seller_lot_comment')
+    ? mikhmon_normalize_seller_lot_comment($regtable['comment'], $sellers_data)
+    : $regtable['comment'];
   $voucherSellerName = mikhmon_resolve_voucher_seller($comment, $sellers_data);
   if ($getdatalimit == 0) {
     $datalimit = "";

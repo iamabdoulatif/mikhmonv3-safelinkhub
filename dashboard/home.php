@@ -61,9 +61,15 @@ if (!isset($_SESSION["mikhmon"])) {
   $vendorActiveToday = 0;
   $vendorPeakRevenue = 0.0;
 
-  $enableDashboardSalesScan = false;
-  if ($enableDashboardSalesScan && !empty($sellers_data) && is_array($sellers_data)) {
-    foreach ($sellers_data as $sellerKey => $sellerData) {
+  $monthlySales = null;
+  $monthlySalesMonthKey = null;
+
+  $enableDashboardSalesScan = true;
+  $dashboardSellersData = function_exists('mikhmon_filter_display_sellers')
+    ? mikhmon_filter_display_sellers($sellers_data)
+    : $sellers_data;
+  if ($enableDashboardSalesScan && !empty($dashboardSellersData) && is_array($dashboardSellersData)) {
+    foreach ($dashboardSellersData as $sellerKey => $sellerData) {
       $vendorAnalytics[$sellerKey] = array(
         'name' => isset($sellerData['name']) ? $sellerData['name'] : $sellerKey,
         'commission_rate' => isset($sellerData['commission']) ? (int)$sellerData['commission'] : 0,
@@ -81,23 +87,36 @@ if (!isset($_SESSION["mikhmon"])) {
     $currentMonthTag = strtolower(date("M")) . date("Y");
     $currentDayTag = $clockDayKey;
     $monthlySales = mikhmon_fetch_sales_by_month($API, $currentMonthTag);
+    $monthlySalesMonthKey = $currentMonthTag;
+
+    // Pour l'attribution vendeur, /system/script/print est la seule source
+    // qui conserve le commentaire d'origine du ticket. mikhmon_fetch_sales_by_month()
+    // peut renvoyer des ventes reconstruites à partir des utilisateurs hotspot
+    // consommés (commentaire perdu), ce qui empêcherait toute attribution.
+    $attributedMonthlySales = mikhmon_comm_with_reconnect(
+      $API,
+      "/system/script/print",
+      array("?comment" => "mikhmon"),
+      $iphost,
+      $userhost,
+      $passwdhost
+    );
+    if (!empty($attributedMonthlySales)) {
+      $monthlySales = mikhmon_unique_sale_scripts(mikhmon_filter_sale_scripts($attributedMonthlySales, '', $currentMonthTag));
+    }
+
     if (is_array($monthlySales)) {
       foreach ($monthlySales as $saleScript) {
-        if (!isset($saleScript['comment']) || $saleScript['comment'] !== 'mikhmon') {
-          continue;
-        }
+        $sale = (isset($saleScript['date']) && isset($saleScript['comment']))
+          ? $saleScript
+          : mikhmon_parse_sale_script($saleScript);
 
-        $saleParts = explode("-|-", isset($saleScript['name']) ? $saleScript['name'] : '');
-        if (count($saleParts) < 9) {
-          continue;
-        }
-
-        $saleDate = mikhmon_normalize_sale_date(trim($saleParts[0]));
-        $saleTime = trim($saleParts[1]);
-        $saleUser = trim($saleParts[2]);
-        $salePrice = (float)trim($saleParts[3]);
-        $saleProfile = trim($saleParts[7]);
-        $saleComment = trim($saleParts[8]);
+        $saleDate = isset($sale['date']) ? mikhmon_normalize_sale_date($sale['date']) : '';
+        $saleTime = isset($sale['time']) ? trim($sale['time']) : '';
+        $saleUser = isset($sale['user']) ? trim($sale['user']) : '';
+        $salePrice = mikhmon_parse_money_amount(isset($sale['price']) ? $sale['price'] : 0);
+        $saleProfile = isset($sale['profile']) ? trim($sale['profile']) : '';
+        $saleComment = isset($sale['comment']) ? trim($sale['comment']) : '';
         $sellerKey = mikhmon_comment_seller_key($saleComment, $sellers_data);
         if ($sellerKey === '' || !isset($vendorAnalytics[$sellerKey])) {
           continue;
@@ -220,7 +239,8 @@ if (!isset($_SESSION["mikhmon"])) {
   $revenueForecast = null;
   if ($livereport != "disable") {
     $currentDayKey = $clockDayKey;
-    $incomeSummary = mikhmon_dashboard_income_summary($API, $clockDayKey);
+    $cachedMonthlySales = ($monthlySalesMonthKey === mikhmon_sale_month_key($clockDayKey)) ? $monthlySales : null;
+    $incomeSummary = mikhmon_dashboard_income_summary($API, $clockDayKey, $cachedMonthlySales);
     $incomeTodayCount = $incomeSummary['today_count'];
     $incomeTodayTotal = $incomeSummary['today_total'];
     $incomeMonthCount = $incomeSummary['month_count'];
@@ -235,7 +255,7 @@ if (!isset($_SESSION["mikhmon"])) {
     $_SESSION[$session.'dincome'] = $incomeTodayFormatted;
     $_SESSION[$session.'mincome'] = $incomeMonthFormatted;
 
-    $revenueForecast = mikhmon_revenue_forecast($API, $clockDayKey, 7);
+    $revenueForecast = mikhmon_revenue_forecast($API, $clockDayKey, 7, $cachedMonthlySales);
   }
 /*
 // get selling report

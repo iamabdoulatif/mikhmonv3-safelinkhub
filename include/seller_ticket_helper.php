@@ -1,7 +1,37 @@
 <?php
 
+if (!function_exists('mikhmon_hotspot_user_is_available')) {
+    function mikhmon_hotspot_user_is_available($user) {
+        if (!is_array($user)) {
+            return false;
+        }
+        $uptime = isset($user['uptime']) ? trim((string)$user['uptime']) : '';
+        return $uptime === '' || $uptime === '0s';
+    }
+}
+
 if (!function_exists('mikhmon_comment_seller_key')) {
+    function mikhmon_seller_display_label($sellerKey, $sellerData) {
+        $label = trim((string)$sellerKey);
+        if (is_array($sellerData) && isset($sellerData['name']) && trim((string)$sellerData['name']) !== '') {
+            $label = trim((string)$sellerData['name']);
+        }
+
+        $label = preg_replace('/\s*\(\s*historique\s*\)\s*$/i', '', $label);
+        $label = preg_replace('/(?:[\s_-]+historique)\s*$/i', '', $label);
+        $label = preg_replace('/[^a-zA-Z0-9_\- ]/', '', $label);
+        $label = trim(preg_replace('/\s+/', ' ', $label));
+
+        return $label !== '' ? $label : trim((string)$sellerKey);
+    }
+
     function mikhmon_comment_seller_aliases($sellerKey, $sellerData) {
+        static $cache = array();
+        $cacheKey = trim((string)$sellerKey) . '|' . (is_array($sellerData) && isset($sellerData['name']) ? (string)$sellerData['name'] : '');
+        if (isset($cache[$cacheKey])) {
+            return $cache[$cacheKey];
+        }
+
         $aliases = array();
         $sellerKey = trim((string)$sellerKey);
         if ($sellerKey !== '') {
@@ -11,7 +41,20 @@ if (!function_exists('mikhmon_comment_seller_key')) {
             $sellerName = trim((string)$sellerData['name']);
             if ($sellerName !== '') {
                 $aliases[] = $sellerName;
+
+                // Les lots historiques utilisent parfois "Nom historique" sans
+                // parenthèses au lieu de "Nom (historique)".
+                $sellerNameNoParens = trim(preg_replace('/\s+/', ' ', str_replace(array('(', ')'), '', $sellerName)));
+                if ($sellerNameNoParens !== '' && $sellerNameNoParens !== $sellerName) {
+                    $aliases[] = $sellerNameNoParens;
+                }
             }
+        }
+
+        $displayLabel = mikhmon_seller_display_label($sellerKey, $sellerData);
+        if ($displayLabel !== '') {
+            $aliases[] = $displayLabel;
+            $aliases[] = $displayLabel . ' historique';
         }
 
         $out = array();
@@ -25,11 +68,18 @@ if (!function_exists('mikhmon_comment_seller_key')) {
             $out[] = trim((string)$alias);
         }
 
+        $cache[$cacheKey] = $out;
         return $out;
     }
 
     function mikhmon_comment_alias_tail_regex($alias) {
-        $parts = preg_split('/[\s_-]+/', strtolower(trim((string)$alias)));
+        static $cache = array();
+        $alias = (string)$alias;
+        if (isset($cache[$alias])) {
+            return $cache[$alias];
+        }
+
+        $parts = preg_split('/[\s_-]+/', strtolower(trim($alias)));
         $cleanParts = array();
         foreach ($parts as $part) {
             $part = trim($part);
@@ -38,10 +88,33 @@ if (!function_exists('mikhmon_comment_seller_key')) {
             }
         }
         if (empty($cleanParts)) {
-            return '';
+            return $cache[$alias] = '';
         }
 
-        return '/(?:^|[\s_-])' . implode('[\s_-]+', $cleanParts) . '$/i';
+        return $cache[$alias] = '/(?:^|[\s_-])' . implode('[\s_-]+', $cleanParts) . '$/i';
+    }
+
+    function mikhmon_comment_alias_tail_or_profile_regex($alias) {
+        static $cache = array();
+        $alias = (string)$alias;
+        if (isset($cache[$alias])) {
+            return $cache[$alias];
+        }
+
+        $parts = preg_split('/[\s_-]+/', strtolower(trim($alias)));
+        $cleanParts = array();
+        foreach ($parts as $part) {
+            $part = trim($part);
+            if ($part !== '') {
+                $cleanParts[] = preg_quote($part, '/');
+            }
+        }
+        if (empty($cleanParts)) {
+            return $cache[$alias] = '';
+        }
+
+        $profileTail = '(?:[\s_-]+\d{1,2}[\s_-]*(?:heures?|jours?|jour|semaines?|semaine|mois)(?:[\s_-]*pc)?)?';
+        return $cache[$alias] = '/(?:^|[\s_-])' . implode('[\s_-]+', $cleanParts) . $profileTail . '$/i';
     }
 
     function mikhmon_comment_matches_seller_alias($comment, $alias) {
@@ -56,6 +129,11 @@ if (!function_exists('mikhmon_comment_seller_key')) {
         }
 
         $regex = mikhmon_comment_alias_tail_regex($alias);
+        if ($regex !== '' && preg_match($regex, $comment) === 1) {
+            return true;
+        }
+
+        $regex = mikhmon_comment_alias_tail_or_profile_regex($alias);
         return $regex !== '' && preg_match($regex, $comment) === 1;
     }
 
@@ -73,15 +151,25 @@ if (!function_exists('mikhmon_comment_seller_key')) {
             }
         }
 
+        // Les comptes actifs sont prioritaires sur les comptes historiques :
+        // un commentaire "...-Mijai" doit être attribué au compte actif "mijai"
+        // plutôt qu'à l'ancien compte historique "Mijai" partageant le même alias.
+        $historicalMatch = '';
         foreach ($sellersData as $sellerKey => $sellerData) {
             foreach (mikhmon_comment_seller_aliases($sellerKey, $sellerData) as $alias) {
                 if (mikhmon_comment_matches_seller_alias($comment, $alias)) {
+                    if (mikhmon_seller_is_historical($sellerData)) {
+                        if ($historicalMatch === '') {
+                            $historicalMatch = $sellerKey;
+                        }
+                        continue 2;
+                    }
                     return $sellerKey;
                 }
             }
         }
 
-        return '';
+        return $historicalMatch;
     }
 }
 
@@ -101,7 +189,7 @@ if (!function_exists('mikhmon_comment_base_lot')) {
             if (strcasecmp($comment, $alias) === 0) {
                 return '';
             }
-            $regex = mikhmon_comment_alias_tail_regex($alias);
+            $regex = mikhmon_comment_alias_tail_or_profile_regex($alias);
             if ($regex !== '' && preg_match($regex, $comment) === 1) {
                 return rtrim(preg_replace($regex, '', $comment), "-_ \t\n\r\0\x0B");
             }
@@ -120,13 +208,9 @@ if (!function_exists('mikhmon_comment_assign_seller')) {
 
         $sellerLabel = $sellerKey;
         if (is_array($sellersData) && isset($sellersData[$sellerKey]) && is_array($sellersData[$sellerKey])) {
-            $displayName = trim(isset($sellersData[$sellerKey]['name']) ? (string)$sellersData[$sellerKey]['name'] : '');
+            $displayName = mikhmon_seller_display_label($sellerKey, $sellersData[$sellerKey]);
             if ($displayName !== '') {
-                $sellerLabel = preg_replace('/[^a-zA-Z0-9_\- ]/', '', $displayName);
-                $sellerLabel = trim(preg_replace('/\s+/', ' ', $sellerLabel));
-                if ($sellerLabel === '') {
-                    $sellerLabel = $sellerKey;
-                }
+                $sellerLabel = $displayName;
             }
         }
 
@@ -143,6 +227,22 @@ if (!function_exists('mikhmon_comment_assign_seller')) {
         }
 
         return $baseLot . '-' . $sellerLabel;
+    }
+}
+
+if (!function_exists('mikhmon_normalize_seller_lot_comment')) {
+    function mikhmon_normalize_seller_lot_comment($comment, $sellersData) {
+        $comment = trim((string)$comment);
+        if ($comment === '' || !is_array($sellersData)) {
+            return $comment;
+        }
+
+        $sellerKey = mikhmon_comment_seller_key($comment, $sellersData);
+        if ($sellerKey === '') {
+            return $comment;
+        }
+
+        return mikhmon_comment_assign_seller($comment, $sellerKey, $sellersData);
     }
 }
 
@@ -224,6 +324,127 @@ if (!function_exists('mikhmon_collect_profiles_from_users')) {
         $profiles = array_keys($profiles);
         natcasesort($profiles);
         return array_values($profiles);
+    }
+}
+
+if (!function_exists('mikhmon_seller_is_historical')) {
+    function mikhmon_seller_is_historical($sellerData) {
+        return is_array($sellerData)
+            && !empty($sellerData['historical']);
+    }
+}
+
+if (!function_exists('mikhmon_filter_display_sellers')) {
+    function mikhmon_filter_display_sellers($sellersData) {
+        $filtered = array();
+        if (!is_array($sellersData)) {
+            return $filtered;
+        }
+
+        foreach ($sellersData as $sellerKey => $sellerData) {
+            if (mikhmon_seller_is_historical($sellerData)) {
+                continue;
+            }
+            $filtered[$sellerKey] = $sellerData;
+        }
+
+        return $filtered;
+    }
+}
+
+if (!function_exists('mikhmon_seller_comment_lot_key')) {
+    function mikhmon_seller_comment_lot_key($comment, $profile, $sellersData) {
+        $comment = trim((string)$comment);
+        if ($comment === '') {
+            return '';
+        }
+
+        $base = mikhmon_comment_base_lot($comment, $sellersData);
+        $base = preg_replace('/(?:\s*\|\s*)?MIKHMON_ACCOUNT\b.*$/i', '', $base);
+        $base = trim((string)$base);
+
+        $profile = trim((string)$profile);
+        if ($profile !== '') {
+            $quotedProfile = preg_quote($profile, '/');
+            $base = preg_replace('/[-_ ]+' . $quotedProfile . '$/i', '', $base);
+        }
+
+        $base = preg_replace('/[-_ ]+$/', '', $base);
+        $base = strtolower(preg_replace('/\s+/', ' ', trim((string)$base)));
+        $profileKey = strtolower(preg_replace('/\s+/', ' ', $profile));
+
+        return $base !== '' ? $base . '|' . $profileKey : '';
+    }
+}
+
+if (!function_exists('mikhmon_seller_lot_owner_map_from_users')) {
+    function mikhmon_seller_lot_owner_map_from_users($users, $sellersData) {
+        $owners = array();
+        $conflicts = array();
+        if (!is_array($users)) {
+            return $owners;
+        }
+
+        foreach ($users as $user) {
+            if (!is_array($user)) {
+                continue;
+            }
+
+            $comment = isset($user['comment']) ? $user['comment'] : '';
+            $sellerKey = mikhmon_comment_seller_key($comment, $sellersData);
+            if ($sellerKey === '') {
+                continue;
+            }
+
+            $profile = isset($user['profile']) ? $user['profile'] : '';
+            $lotKey = mikhmon_seller_comment_lot_key($comment, $profile, $sellersData);
+            if ($lotKey === '') {
+                continue;
+            }
+
+            if (isset($owners[$lotKey]) && $owners[$lotKey] !== $sellerKey) {
+                $conflicts[$lotKey] = true;
+                unset($owners[$lotKey]);
+                continue;
+            }
+            if (!isset($conflicts[$lotKey])) {
+                $owners[$lotKey] = $sellerKey;
+            }
+        }
+
+        return $owners;
+    }
+}
+
+if (!function_exists('mikhmon_enrich_sales_with_lot_owner')) {
+    function mikhmon_enrich_sales_with_lot_owner($sales, $lotOwnerMap, $sellersData) {
+        if (!is_array($sales) || empty($lotOwnerMap)) {
+            return is_array($sales) ? $sales : array();
+        }
+
+        $out = array();
+        foreach ($sales as $sale) {
+            if (!is_array($sale)) {
+                continue;
+            }
+
+            $row = isset($sale['profile']) && array_key_exists('comment', $sale)
+                ? $sale
+                : (function_exists('mikhmon_parse_sale_script') ? mikhmon_parse_sale_script($sale) : $sale);
+
+            $comment = isset($row['comment']) ? (string)$row['comment'] : '';
+            if (mikhmon_comment_seller_key($comment, $sellersData) === '') {
+                $profile = isset($row['profile']) ? $row['profile'] : '';
+                $lotKey = mikhmon_seller_comment_lot_key($comment, $profile, $sellersData);
+                if ($lotKey !== '' && isset($lotOwnerMap[$lotKey])) {
+                    $row['comment'] = rtrim($comment, "-_ \t\n\r\0\x0B") . '-' . $lotOwnerMap[$lotKey];
+                }
+            }
+
+            $out[] = $row;
+        }
+
+        return $out;
     }
 }
 

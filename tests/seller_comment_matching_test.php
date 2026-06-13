@@ -11,6 +11,23 @@ $sellers = array(
         'name' => 'Ib25',
         'session' => 'Safelink',
     ),
+    'Mijai' => array(
+        'name' => 'Mijai (historique)',
+        'session' => 'Safelink',
+        'historical' => true,
+    ),
+    'mijai' => array(
+        'name' => 'Mijai',
+        'session' => 'Safelink',
+    ),
+    'boua' => array(
+        'name' => 'Boua',
+        'session' => 'Safelink',
+    ),
+    'levie' => array(
+        'name' => 'Levie',
+        'session' => 'Safelink',
+    ),
 );
 
 $matchingComments = array(
@@ -60,6 +77,31 @@ if (mikhmon_comment_assign_seller('lot', 'ferima', $sellers) !== 'lot-Ferima') {
 if (mikhmon_comment_seller_key('lot-Ferima', $sellers) !== 'ferima') {
     fwrite(STDERR, 'display-name lot comments must still match the seller key' . PHP_EOL);
     exit(1);
+}
+
+if (mikhmon_comment_seller_key('vc-248-06.12.26-01-SEMAINE-Mijai historique 01-SEMAINE', $sellers) !== 'mijai') {
+    fwrite(STDERR, 'Mijai historique lot comments must be reassigned to the active Mijai seller' . PHP_EOL);
+    exit(1);
+}
+
+if (mikhmon_comment_assign_seller('vc-248-06.12.26-01-SEMAINE-Mijai historique 01-SEMAINE', 'mijai', $sellers) !== 'vc-248-06.12.26-01-SEMAINE-Mijai') {
+    fwrite(STDERR, 'assigning historical Mijai lots must keep the visible lot label as Mijai only' . PHP_EOL);
+    exit(1);
+}
+
+if (mikhmon_normalize_seller_lot_comment('vc-248-06.12.26-01-SEMAINE-Mijai historique 01-SEMAINE', $sellers) !== 'vc-248-06.12.26-01-SEMAINE-Mijai') {
+    fwrite(STDERR, 'ticket comments must never display Mijai historique' . PHP_EOL);
+    exit(1);
+}
+
+foreach (array(
+    'vc-255-06.12.26-01-JOUR-Boua 01-JOUR' => 'boua',
+    'vc-928-06.08.26-01-SEMAINE-Levie 01-SEMAINE' => 'levie',
+) as $lotComment => $expectedSeller) {
+    if (mikhmon_comment_seller_key($lotComment, $sellers) !== $expectedSeller) {
+        fwrite(STDERR, 'profile-suffixed lot comment must match seller: ' . $lotComment . PHP_EOL);
+        exit(1);
+    }
 }
 
 echo "seller_comment_matching_test passed\n";

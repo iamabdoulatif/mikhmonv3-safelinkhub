@@ -9,7 +9,7 @@ if ($seller === false) {
 }
 
 foreach (array(
-    'dashboard must load router data' => '$sellerShouldLoadRouterData = true;',
+    'dashboard must load router data for revenue cards' => '$sellerShouldLoadRouterData = true;',
     'monthly vendor sales data structure' => '$sellerMonthlySalesByVendor',
     'same session vendor filter' => '$sellerSessionSellers',
     'monthly vendor sales dashboard card' => 'seller-monthly-vendor-sales-card',

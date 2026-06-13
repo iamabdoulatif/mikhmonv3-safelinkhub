@@ -68,12 +68,15 @@ if ($overviewReportPeriod === 'week') {
 }
 
 if (!function_exists('mikhmon_filter_session_sellers')) {
-    function mikhmon_filter_session_sellers($sellersData, $sessionName) {
+    function mikhmon_filter_session_sellers($sellersData, $sessionName, $includeHistorical = false) {
         $filtered = array();
         if (!is_array($sellersData)) {
             return $filtered;
         }
         foreach ($sellersData as $sellerKey => $sellerData) {
+            if (!$includeHistorical && function_exists('mikhmon_seller_is_historical') && mikhmon_seller_is_historical($sellerData)) {
+                continue;
+            }
             $sellerSession = isset($sellerData['session']) ? trim((string)$sellerData['session']) : '';
             if ($sellerSession === '' || $sellerSession === $sessionName) {
                 $filtered[$sellerKey] = $sellerData;
@@ -166,12 +169,11 @@ if ($manager_logged_in) {
 
     date_default_timezone_set('UTC');
     $managerShouldLoadRouterData = true;
+    $managerShouldLoadFullTicketData = ($action !== 'dashboard');
     if (!$manager_session_missing && $managerShouldLoadRouterData) {
         $API = new RouterosAPI();
         $API->debug = false;
-        $API->timeout = 2;
-        $API->attempts = 1;
-        $API->delay = 0;
+        mikhmon_configure_routeros_api($API);
     }
 
     if (!$manager_session_missing && $managerShouldLoadRouterData) {
@@ -193,10 +195,6 @@ if ($manager_logged_in) {
 
         // ── Récupérer toutes les ventes ──────────────────────────────────────
         $getSales = $API->comm("/system/script/print", array("?comment" => "mikhmon"));
-        $managerSellersData = array_merge(
-            $managerSellersData,
-            mikhmon_accounting_historical_sellers($getSales, $manager_session_name, $managerSellersData)
-        );
         if (strlen($idhr) > 0) {
             $allSales = mikhmon_filter_sale_scripts($getSales, $idhr, '');
         } elseif ($action === 'overview') {
@@ -238,7 +236,9 @@ if ($manager_logged_in) {
         $TotalReg = count($getData);
 
         // ── Stock non utilisé par vendeur ────────────────────────────────────
-        $unusedAll = $API->comm("/ip/hotspot/user/print", array("?uptime" => "0s"));
+        $unusedAll = $managerShouldLoadFullTicketData
+            ? $API->comm("/ip/hotspot/user/print", array("?uptime" => "0s"))
+            : array();
         if (is_array($unusedAll)) {
             foreach ($managerSellersData as $sk => $sd) {
                 $allSellerStock[$sk] = array();

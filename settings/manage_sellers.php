@@ -42,6 +42,9 @@ $transfer_log_msg   = '';
 $transfer_log_error = '';
 $force_active_tab   = '';
 $API_ms_connected  = false;
+$displaySellersData = function_exists('mikhmon_filter_display_sellers')
+    ? mikhmon_filter_display_sellers($sellers_data)
+    : $sellers_data;
 $hotspotDefaultUsersRaw = array();
 $hotspotIpBindingRows = array();
 $routerUserRows = array();
@@ -119,18 +122,22 @@ $globalStockIds  = array(); // ['profile'] = ['.id', ...]  (pour distribution)
 if (!empty($iphost)) {
     $API_ms = new RouterosAPI();
     $API_ms->debug = false;
+    mikhmon_configure_routeros_api($API_ms);
     if ($API_ms->connect($iphost, $userhost, decrypt($passwdhost))) {
         $API_ms_connected = true;
         $hotspotDefaultUsersRaw = $API_ms->comm("/ip/hotspot/user/print", array("?profile" => "default"));
         $hotspotIpBindingRows = $API_ms->comm("/ip/hotspot/ip-binding/print");
         $routerUserRows = $API_ms->comm("/user/print");
-        $unusedAll = $API_ms->comm("/ip/hotspot/user/print", array("?uptime" => "0s"));
+        $unusedAll = $API_ms->comm("/ip/hotspot/user/print");
         $restoreSalesRows = $API_ms->comm("/system/script/print", array("?comment" => "mikhmon"));
         if (is_array($unusedAll)) {
             foreach ($sellers_data as $sk => $sd) {
                 $allSellerStock[$sk] = array();
             }
             foreach ($unusedAll as $u) {
+                if (!mikhmon_hotspot_user_is_available($u)) {
+                    continue;
+                }
                 $prof = isset($u['profile']) ? $u['profile'] : '(unknown)';
                 $assigned = false;
                 $matchedSeller = mikhmon_comment_seller_key(isset($u['comment']) ? $u['comment'] : '', $sellers_data);
@@ -153,21 +160,21 @@ if (!empty($iphost)) {
 }
 
 // ── Transfert admin ──────────────────────────────────────────────────────────
-if (isset($_POST['admin_transfer']) && !empty($sellers_data)) {
+if (isset($_POST['admin_transfer']) && !empty($displaySellersData)) {
     csrf_guard();
     $src    = preg_replace('/[^a-zA-Z0-9_]/', '', trim($_POST['src_seller']));
     $dst    = preg_replace('/[^a-zA-Z0-9_]/', '', trim($_POST['dst_seller']));
     $tprof  = trim($_POST['transfer_profile']);
     $tqty   = max(1, (int)$_POST['transfer_qty']);
 
-    if (!isset($sellers_data[$src]) || !isset($sellers_data[$dst]) || $src === $dst) {
+    if (!isset($displaySellersData[$src]) || !isset($displaySellersData[$dst]) || $src === $dst) {
         $transfer_error = isset($_transfer_select_vendor) ? $_transfer_select_vendor : 'Select valid source and destination vendors.';
     } elseif ($tprof === '') {
         $transfer_error = isset($_transfer_select_profile) ? $_transfer_select_profile : 'Select a profile.';
     } elseif (!isset($allSellerStock[$src][$tprof]) || $allSellerStock[$src][$tprof] < $tqty) {
         $transfer_error = isset($_transfer_insufficient) ? $_transfer_insufficient : 'Insufficient stock.';
     } else {
-        if (!isset($API_ms)) { $API_ms = new RouterosAPI(); $API_ms->debug = false; $API_ms->connect($iphost, $userhost, decrypt($passwdhost)); }
+        if (!isset($API_ms)) { $API_ms = new RouterosAPI(); $API_ms->debug = false; mikhmon_configure_routeros_api($API_ms); $API_ms->connect($iphost, $userhost, decrypt($passwdhost)); }
         $done = 0;
         foreach ($allStockUsers as $u) {
             if ($done >= $tqty) break;
@@ -202,7 +209,7 @@ if (isset($_POST['admin_transfer']) && !empty($sellers_data)) {
 
 // ── Distribution globale (stock non assigné → vendeurs) ─────────────────────
 $bulk_msg = '';
-if (isset($_POST['bulk_distribute']) && !empty($sellers_data)) {
+if (isset($_POST['bulk_distribute']) && !empty($displaySellersData)) {
     csrf_guard();
     $dist_profile = trim(isset($_POST['dist_profile']) ? $_POST['dist_profile'] : '');
     $vendor_qty   = (isset($_POST['vendor_qty']) && is_array($_POST['vendor_qty'])) ? $_POST['vendor_qty'] : array();
@@ -210,14 +217,15 @@ if (isset($_POST['bulk_distribute']) && !empty($sellers_data)) {
     if ($dist_profile !== '' && !empty($vendor_qty)) {
         if (!isset($API_ms)) {
             $API_ms = new RouterosAPI(); $API_ms->debug = false;
+            mikhmon_configure_routeros_api($API_ms);
             $API_ms->connect($iphost, $userhost, decrypt($passwdhost));
         }
         // Recalculer les IDs non assignés pour ce profil (données fraîches)
-        $freshUnused = $API_ms->comm("/ip/hotspot/user/print", array("?uptime" => "0s", "?profile" => $dist_profile));
+        $freshUnused = $API_ms->comm("/ip/hotspot/user/print", array("?profile" => $dist_profile));
         $freshUsers = array();
         if (is_array($freshUnused)) {
             foreach ($freshUnused as $u) {
-                if (!isset($u['.id'])) continue;
+                if (!isset($u['.id']) || !mikhmon_hotspot_user_is_available($u)) continue;
                 $assigned = mikhmon_comment_seller_key(isset($u['comment']) ? $u['comment'] : '', $sellers_data) !== '';
                 if (!$assigned) $freshUsers[] = $u;
             }
@@ -230,7 +238,7 @@ if (isset($_POST['bulk_distribute']) && !empty($sellers_data)) {
         foreach ($vendor_qty as $vk => $qty) {
             $vk  = preg_replace('/[^a-zA-Z0-9_]/', '', (string)$vk);
             $qty = max(0, (int)$qty);
-            if ($qty <= 0 || !isset($sellers_data[$vk])) continue;
+            if ($qty <= 0 || !isset($displaySellersData[$vk])) continue;
 
             $done = 0;
             while ($done < $qty && $pointer < count($freshUsers)) {
@@ -242,15 +250,15 @@ if (isset($_POST['bulk_distribute']) && !empty($sellers_data)) {
                 $pointer++; $done++;
             }
             if ($done > 0) {
-                log_transfer('(global)', 'Stock global', $vk, $sellers_data[$vk]['name'], $dist_profile, $done, 'admin', isset($_SESSION['mikhmon']) ? $_SESSION['mikhmon'] : 'admin');
+                log_transfer('(global)', 'Stock global', $vk, $displaySellersData[$vk]['name'], $dist_profile, $done, 'admin', isset($_SESSION['mikhmon']) ? $_SESSION['mikhmon'] : 'admin');
                 if (!isset($allSellerStock[$vk][$dist_profile])) $allSellerStock[$vk][$dist_profile] = 0;
                 $allSellerStock[$vk][$dist_profile] += $done;
-                $ok_parts[] = '<b>' . $done . '</b> → ' . htmlspecialchars($sellers_data[$vk]['name']);
+                $ok_parts[] = '<b>' . $done . '</b> → ' . htmlspecialchars($displaySellersData[$vk]['name']);
             }
             if ($done < $qty) {
                 $err_parts[] = isset($_transfer_insufficient_for)
-                    ? sprintf($_transfer_insufficient_for, htmlspecialchars($sellers_data[$vk]['name']), $qty - $done)
-                    : 'Insufficient stock for <b>' . htmlspecialchars($sellers_data[$vk]['name']) . '</b> (missing ' . ($qty - $done) . ')';
+                    ? sprintf($_transfer_insufficient_for, htmlspecialchars($displaySellersData[$vk]['name']), $qty - $done)
+                    : 'Insufficient stock for <b>' . htmlspecialchars($displaySellersData[$vk]['name']) . '</b> (missing ' . ($qty - $done) . ')';
             }
         }
         // Mettre à jour le stock global en mémoire
@@ -349,6 +357,7 @@ if (isset($_POST['assign_hotspot_account'])) {
     } else {
         if (!isset($API_ms) || !$API_ms_connected) {
             $API_ms = new RouterosAPI();
+            mikhmon_configure_routeros_api($API_ms);
             $API_ms->debug = false;
             $API_ms_connected = $API_ms->connect($iphost, $userhost, decrypt($passwdhost));
         }
@@ -429,6 +438,7 @@ if (isset($_POST['add_seller'])) {
 
     if (!isset($API_ms) || !$API_ms_connected) {
         $API_ms = new RouterosAPI();
+        mikhmon_configure_routeros_api($API_ms);
         $API_ms->debug = false;
         $API_ms_connected = $API_ms->connect($iphost, $userhost, decrypt($passwdhost));
     }
@@ -466,6 +476,7 @@ if (isset($_POST['delete_seller'])) {
         $deleteSellerIsHistorical = !empty($sellers_data[$del]['historical']);
         if (!isset($API_ms) || !$API_ms_connected) {
             $API_ms = new RouterosAPI();
+            mikhmon_configure_routeros_api($API_ms);
             $API_ms->debug = false;
             $API_ms_connected = $API_ms->connect($iphost, $userhost, decrypt($passwdhost));
         }
@@ -589,6 +600,7 @@ if (isset($_POST['add_manager'])) {
 
     if (!isset($API_ms) || !$API_ms_connected) {
         $API_ms = new RouterosAPI();
+        mikhmon_configure_routeros_api($API_ms);
         $API_ms->debug = false;
         $API_ms_connected = $API_ms->connect($iphost, $userhost, decrypt($passwdhost));
     }
@@ -625,6 +637,7 @@ if (isset($_POST['delete_manager'])) {
         $deleteManagerIsHistorical = !empty($managers_data[$dm]['historical']);
         if (!isset($API_ms) || !$API_ms_connected) {
             $API_ms = new RouterosAPI();
+            mikhmon_configure_routeros_api($API_ms);
             $API_ms->debug = false;
             $API_ms_connected = $API_ms->connect($iphost, $userhost, decrypt($passwdhost));
         }
@@ -752,6 +765,9 @@ $restoredAccounts = mikhmon_hotspot_restored_account_records(
     mikhmon_deleted_account_session_keys($deleted_accounts_data, 'managers', $session)
 );
 foreach ($restoredAccounts['sellers'] as $restoredKey => $restoredRecord) {
+    if (!empty($restoredRecord['historical'])) {
+        continue;
+    }
     if (isset($sellers_data[$restoredKey]) || isset($managers_data[$restoredKey])) {
         continue;
     }
@@ -772,6 +788,9 @@ foreach ($restoredAccounts['managers'] as $restoredKey => $restoredRecord) {
         $managers_data[$restoredKey] = $storedRecord;
     }
 }
+$displaySellersData = function_exists('mikhmon_filter_display_sellers')
+    ? mikhmon_filter_display_sellers($sellers_data)
+    : $sellers_data;
 $hotspotDefaultCandidates = mikhmon_hotspot_default_account_candidates($hotspotDefaultUsersRaw, $sellers_data, $managers_data);
 $accountIdentityCandidates = mikhmon_hotspot_account_identity_candidates($hotspotDefaultUsersRaw, $hotspotIpBindingRows, $sellers_data, $managers_data);
 $active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'sellers';
@@ -798,7 +817,7 @@ if ($adminAccountingFrom > $adminAccountingTo) {
 }
 
 $adminAccountingSellersData = array();
-foreach ($sellers_data as $sk => $sd) {
+foreach ($displaySellersData as $sk => $sd) {
     $sellerSession = trim(isset($sd['session']) ? $sd['session'] : '');
     if ($sellerSession === '' || $sellerSession === $session) {
         $adminAccountingSellersData[$sk] = $sd;
@@ -812,15 +831,12 @@ $adminAccountingSales = array();
 if ($active_tab === 'accounting' && !empty($iphost)) {
     if (!isset($API_ms) || !$API_ms_connected) {
         $API_ms = new RouterosAPI();
+        mikhmon_configure_routeros_api($API_ms);
         $API_ms->debug = false;
         $API_ms_connected = $API_ms->connect($iphost, $userhost, decrypt($passwdhost));
     }
     if ($API_ms_connected) {
         $adminAccountingSales = mikhmon_fetch_sales_by_month($API_ms, $adminAccountingMonthKey);
-        $adminAccountingSellersData = array_merge(
-            $adminAccountingSellersData,
-            mikhmon_accounting_historical_sellers($adminAccountingSales, $session, $adminAccountingSellersData)
-        );
     }
 }
 if ($adminAccountingSeller !== '' && !isset($adminAccountingSellersData[$adminAccountingSeller])) {
@@ -1335,11 +1351,11 @@ function copyMikrotikCmd() {
 <div class="card box-bordered" style="margin-bottom:15px;">
   <div class="card-header"><h4><i class="fa fa-list"></i> <?= $_registered_sellers ?></h4></div>
   <div class="card-body">
-    <?php if (empty($sellers_data)): ?>
+    <?php if (empty($displaySellersData)): ?>
       <p class="text-center"><i class="fa fa-info-circle"></i> <?= $_no_seller_registered ?></p>
     <?php else: ?>
     <div class="row admin-registered-sellers-row">
-      <?php foreach ($sellers_data as $su => $sd): ?>
+      <?php foreach ($displaySellersData as $su => $sd): ?>
       <?php $su_rate = isset($sd['commission']) ? (int)$sd['commission'] : 0; ?>
       <div class="col-6 col-box-6 admin-registered-seller-col">
         <div class="admin-registered-seller-card">
@@ -1394,7 +1410,7 @@ function copyMikrotikCmd() {
     </div>
 
     <!-- Formulaires édition compte vendeur -->
-    <?php foreach ($sellers_data as $su => $sd): ?>
+    <?php foreach ($displaySellersData as $su => $sd): ?>
     <div class="modal-window" id="edit_seller_<?= htmlspecialchars($su) ?>" aria-hidden="true">
       <div>
         <header><h1><i class="fa fa-edit"></i> <?= isset($_edit) ? $_edit : 'Edit' ?> — <?= htmlspecialchars($su) ?></h1></header>
@@ -1437,7 +1453,7 @@ function copyMikrotikCmd() {
     <?php endforeach; ?>
 
     <!-- Formulaires changement de mot de passe -->
-    <?php foreach ($sellers_data as $su => $sd): ?>
+    <?php foreach ($displaySellersData as $su => $sd): ?>
     <div class="modal-window" id="chgpass_<?= htmlspecialchars($su) ?>" aria-hidden="true">
       <div>
         <header><h1><i class="fa fa-key"></i> <?= $_password ?> — <?= htmlspecialchars($su) ?></h1></header>
@@ -1470,7 +1486,7 @@ function copyMikrotikCmd() {
     <?php endforeach; ?>
 
     <!-- Formulaires commission -->
-    <?php foreach ($sellers_data as $su => $sd): ?>
+    <?php foreach ($displaySellersData as $su => $sd): ?>
     <?php $su_rate = isset($sd['commission']) ? (int)$sd['commission'] : 0; ?>
     <div class="modal-window" id="commission_<?= htmlspecialchars($su) ?>" aria-hidden="true">
       <div>
@@ -1558,7 +1574,7 @@ function copyMikrotikCmd() {
           </tr>
         </thead>
         <tbody>
-          <?php foreach ($sellers_data as $sk => $sd): ?>
+          <?php foreach ($displaySellersData as $sk => $sd): ?>
           <?php $safeKey = preg_replace('/[^a-z0-9_]/i','-', $sk); ?>
           <tr>
             <td>
@@ -1626,7 +1642,7 @@ function copyMikrotikCmd() {
       </div>
     <?php endif; ?>
 
-    <?php if (empty($sellers_data) || count($sellers_data) < 2): ?>
+    <?php if (empty($displaySellersData) || count($displaySellersData) < 2): ?>
       <p class="text-center" style="color:#888;">
         <i class="fa fa-info-circle"></i>
         <?= isset($_no_seller_registered) ? $_no_seller_registered : 'At least two vendors required.' ?>
@@ -1646,6 +1662,7 @@ function copyMikrotikCmd() {
     <?php if ($hasAny): ?>
     <div class="row admin-seller-stock-row">
       <?php foreach ($allSellerStock as $sk => $profiles): ?>
+        <?php if (!isset($sellers_data[$sk])) continue; ?>
         <?php if (empty($profiles)) continue; ?>
         <?php $sellerStockTotal = array_sum($profiles); ?>
         <div class="col-6 col-box-6 admin-seller-stock-col">
@@ -1704,7 +1721,7 @@ function copyMikrotikCmd() {
           <label class="transfer-label"><i class="fa fa-user"></i> <?= isset($_transfer_from) ? $_transfer_from : 'From' ?></label>
           <select name="src_seller" class="form-control" id="srcSeller" onchange="updateAdminProfiles()" required>
             <option value=""><?= isset($_transfer_select_vendor) ? $_transfer_select_vendor : 'Select vendor' ?></option>
-            <?php foreach ($sellers_data as $sk => $sd): ?>
+            <?php foreach ($displaySellersData as $sk => $sd): ?>
               <?php if (!empty($allSellerStock[$sk])): ?>
               <option value="<?= htmlspecialchars($sk) ?>"><?= htmlspecialchars($sd['name']) ?></option>
               <?php endif; ?>
@@ -1731,7 +1748,7 @@ function copyMikrotikCmd() {
           <label class="transfer-label"><i class="fa fa-arrow-right"></i> <?= isset($_transfer_to) ? $_transfer_to : 'Transfer to' ?></label>
           <select name="dst_seller" class="form-control" required>
             <option value=""><?= isset($_transfer_select_vendor) ? $_transfer_select_vendor : 'Select vendor' ?></option>
-            <?php foreach ($sellers_data as $sk => $sd): ?>
+            <?php foreach ($displaySellersData as $sk => $sd): ?>
               <option value="<?= htmlspecialchars($sk) ?>"><?= htmlspecialchars($sd['name']) ?></option>
             <?php endforeach; ?>
           </select>

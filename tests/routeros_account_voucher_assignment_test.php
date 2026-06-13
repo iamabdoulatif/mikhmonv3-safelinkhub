@@ -14,6 +14,8 @@ $checks = array(
   'voucher print must load RouterOS account assignment helper' => strpos($print, "include/hotspot_account_assignment.php") !== false,
   'voucher print must resolve MIKHMON_ACCOUNT comments' => strpos($print, 'mikhmon_hotspot_assignment_from_comment($comment)') !== false,
   'voucher print must prefer configured seller display names' => strpos($print, 'mikhmon_comment_seller_key($comment, $sellersData)') !== false,
+  'voucher print must hide historical suffixes from seller names' => strpos($print, 'mikhmon_seller_display_label') !== false,
+  'voucher print must normalize historical lot comments before rendering' => strpos($print, 'mikhmon_normalize_seller_lot_comment($regtable[\'comment\'], $sellers_data)') !== false,
 );
 
 foreach ($checks as $label => $ok) {

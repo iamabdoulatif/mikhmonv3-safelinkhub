@@ -119,6 +119,9 @@ if (!isset($_SESSION["mikhmon"]) && !$manager_index_logged_in) {
   include_once('./lib/formatbytesbites.php');
   $API = new RouterosAPI();
   $API->debug = false;
+  $API->timeout = 30;
+  $API->attempts = 1;
+  $API->delay = 0;
   $API->connect($iphost, $userhost, decrypt($passwdhost));
 
   $getidentity = $API->comm("/system/identity/print");

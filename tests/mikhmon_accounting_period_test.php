@@ -132,9 +132,9 @@ if (strpos($managerPage, 'mikhmon_accounting_notice_totals_for_targets($accounti
   fwrite(STDERR, 'manager accounting notifications must pass totals and currency' . PHP_EOL);
   exit(1);
 }
-if (strpos($managerPage, 'mikhmon_accounting_historical_sellers($getSales, $manager_session_name, $managerSellersData)') === false
-    || strpos($adminPage, 'mikhmon_accounting_historical_sellers($adminAccountingSales, $session, $adminAccountingSellersData)') === false) {
-  fwrite(STDERR, 'manager and admin accounting must include sellers reconstructed from historical RouterOS sales' . PHP_EOL);
+if (strpos($managerPage, 'mikhmon_accounting_historical_sellers($getSales, $manager_session_name, $managerSellersData)') !== false
+    || strpos($adminPage, 'mikhmon_accounting_historical_sellers($adminAccountingSales, $session, $adminAccountingSellersData)') !== false) {
+  fwrite(STDERR, 'manager and admin accounting must not display sellers reconstructed as historical accounts' . PHP_EOL);
   exit(1);
 }
 if (strpos($adminPage, 'ms-section-accounting') === false) {

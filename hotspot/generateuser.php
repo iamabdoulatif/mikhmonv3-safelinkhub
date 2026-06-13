@@ -221,71 +221,77 @@ if (!function_exists('mikhmon_hotspot_user_add_payload')) {
 
 	function mikhmon_hotspot_numeric_password($length)
 	{
-		$length = (int) $length;
-		if ($length < 3 || $length > 8) {
-			$length = 4;
-		}
+		return mikhmon_hotspot_secure_random_string('num', $length);
+	}
 
-		return randN($length);
+	function mikhmon_hotspot_secure_ticket_length($length, $char = '')
+	{
+		$length = (int) $length;
+		$minimum = ($char === 'num') ? 10 : 8;
+		if ($length < $minimum) {
+			$length = $minimum;
+		}
+		if ($length > 16) {
+			$length = 16;
+		}
+		return $length;
+	}
+
+	function mikhmon_hotspot_secure_charset($char)
+	{
+		if ($char == "lower") {
+			return 'abcdefghjkmnpqrstuvwxyz';
+		}
+		if ($char == "upper") {
+			return 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+		}
+		if ($char == "upplow") {
+			return 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz';
+		}
+		if ($char == "num") {
+			return '23456789';
+		}
+		if ($char == "mix1") {
+			return 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+		}
+		if ($char == "mix2") {
+			return 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+		}
+		return 'abcdefghjkmnpqrstuvwxyz23456789';
+	}
+
+	function mikhmon_hotspot_secure_random_string($char, $length)
+	{
+		$length = mikhmon_hotspot_secure_ticket_length($length, $char);
+		$alphabet = mikhmon_hotspot_secure_charset($char);
+		$max = strlen($alphabet) - 1;
+		$out = '';
+		for ($i = 0; $i < $length; $i++) {
+			$index = function_exists('random_int') ? random_int(0, $max) : mt_rand(0, $max);
+			$out .= $alphabet[$index];
+		}
+		return $out;
 	}
 
 	function mikhmon_hotspot_random_name_part($char, $length)
 	{
-		$length = max(1, (int) $length);
-		if ($char == "lower") {
-			return randLC($length);
-		}
-		if ($char == "upper") {
-			return randUC($length);
-		}
-		if ($char == "upplow") {
-			return randULC($length);
-		}
-		if ($char == "mix") {
-			return randNLC($length);
-		}
-		if ($char == "mix1") {
-			return randNUC($length);
-		}
-		if ($char == "mix2") {
-			return randNULC($length);
-		}
-		if ($char == "num") {
-			return randN($length);
-		}
-
-		return randNLC($length);
+		return mikhmon_hotspot_secure_random_string($char, $length);
 	}
 
 	function mikhmon_hotspot_candidate_credentials($mode, $char, $userl, $prefix)
 	{
-		$userl = (int) $userl;
+		$userl = mikhmon_hotspot_secure_ticket_length($userl, $char);
 		$prefix = (string) $prefix;
 
 		if ($mode == "up") {
 			$name = $prefix . mikhmon_hotspot_random_name_part($char, $userl);
 			return array(
 				'name' => $name,
-				'password' => mikhmon_hotspot_numeric_password($userl),
+				'password' => mikhmon_hotspot_secure_random_string($char, $userl),
 			);
 		}
 
-		$a = array("1" => "", "", 1, 2, 2, 3, 3, 4);
-		$shuf = max(1, $userl - (int) (isset($a[$userl]) ? $a[$userl] : 2));
-		if ($char == "num" || $char == "mix" || $char == "mix1" || $char == "mix2") {
-			$name = $prefix . mikhmon_hotspot_random_name_part($char, $userl);
-		} else {
-			$name = $prefix . mikhmon_hotspot_random_name_part($char, $shuf);
-			if ($userl == 3) {
-				$name .= randN(1);
-			} elseif ($userl == 4 || $userl == 5) {
-				$name .= randN(2);
-			} elseif ($userl == 6 || $userl == 7) {
-				$name .= randN(3);
-			} elseif ($userl == 8) {
-				$name .= randN(4);
-			}
-		}
+		$name = $prefix . mikhmon_hotspot_random_name_part($char, $userl);
 
 		return array(
 			'name' => $name,
@@ -295,10 +301,8 @@ if (!function_exists('mikhmon_hotspot_user_add_payload')) {
 
 	function mikhmon_hotspot_unique_fallback_name($prefix, &$usedNames)
 	{
-		static $fallbackCounter = 0;
 		do {
-			$fallbackCounter++;
-			$name = (string) $prefix . 'T' . date('His') . strtoupper(base_convert($fallbackCounter, 10, 36));
+			$name = (string) $prefix . mikhmon_hotspot_secure_random_string('mix2', 12);
 		} while (isset($usedNames[$name]));
 
 		$usedNames[$name] = true;
@@ -317,7 +321,7 @@ if (!function_exists('mikhmon_hotspot_user_add_payload')) {
 		$name = mikhmon_hotspot_unique_fallback_name($prefix, $usedNames);
 		return array(
 			'name' => $name,
-			'password' => $mode == "up" ? mikhmon_hotspot_numeric_password($userl) : $name,
+			'password' => $mode == "up" ? mikhmon_hotspot_secure_random_string($char, $userl) : $name,
 		);
 	}
 }
@@ -445,6 +449,9 @@ if (!isset($_SESSION["mikhmon"]) && empty($_SESSION['manager_username'])) {
 	}
 	if (!empty($sellers_data) && is_array($sellers_data)) {
 			foreach ($sellers_data as $sellerKey => $sellerData) {
+				if (function_exists('mikhmon_seller_is_historical') && mikhmon_seller_is_historical($sellerData)) {
+					continue;
+				}
 				$sellerSession = isset($sellerData['session']) ? trim($sellerData['session']) : '';
 				if ($sellerSession === '' || $sellerSession === $session) {
 					$sessionSellers[$sellerKey] = $sellerData;
@@ -505,6 +512,9 @@ if (!isset($_SESSION["mikhmon"]) && empty($_SESSION['manager_username'])) {
 				$commt = $user . "-" . rand(100, 999) . "-" . date("m.d.y") . "-" . $profile;
 				if ($adcomment != "") {
 					$commt .= "-" . $adcomment;
+				}
+				if (function_exists('mikhmon_normalize_seller_lot_comment')) {
+					$commt = mikhmon_normalize_seller_lot_comment($commt, $sessionSellers);
 				}
 			$gentemp = $commt . "|~" . $profile . "~" . $getvalid . "~" . $getprice . "!".$getsprice."~" . $timelimit . "~" . $datalimit . "~" . $getlock;
 			$gen = '<?php $genu="'.encrypt($gentemp).'";?>';

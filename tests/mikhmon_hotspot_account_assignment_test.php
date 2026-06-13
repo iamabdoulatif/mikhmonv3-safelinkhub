@@ -184,11 +184,12 @@ if (isset($restoredAfterClear['sellers']['bema'])) {
 class MikhmonHotspotAssignmentFakeApi
 {
     public $calls = array();
+    public $responses = array();
 
     public function comm($path, $params = array())
     {
         $this->calls[] = array($path, $params);
-        return array();
+        return isset($this->responses[$path]) ? $this->responses[$path] : array();
     }
 }
 
@@ -252,14 +253,30 @@ if ($invalidBinding['ok']) {
 
 $routerSellerApi = new MikhmonHotspotAssignmentFakeApi();
 $routerSeller = mikhmon_hotspot_provision_account($routerSellerApi, 'router_user', 'ALB-TECH', 'seller', 'seller_router', 'seller-pass', 'Seller Router', '', '10.10.0.0/24');
-if (!$routerSeller['ok'] || count($routerSellerApi->calls) !== 3 || $routerSellerApi->calls[1][0] !== '/user/group/add' || $routerSellerApi->calls[2][0] !== '/user/add') {
+if (!$routerSeller['ok'] || count($routerSellerApi->calls) !== 4 || $routerSellerApi->calls[1][0] !== '/user/group/add' || $routerSellerApi->calls[2][0] !== '/user/print' || $routerSellerApi->calls[3][0] !== '/user/add') {
     fwrite(STDERR, 'seller RouterOS account must create its limited group and router user' . PHP_EOL);
     exit(1);
 }
 $sellerGroup = $routerSellerApi->calls[1][1];
-$sellerRouterUser = $routerSellerApi->calls[2][1];
+$sellerRouterUser = $routerSellerApi->calls[3][1];
 if ($sellerGroup['name'] !== 'mikhmon-vendeur' || $sellerGroup['policy'] !== 'read,test,winbox,password,web' || $sellerRouterUser['group'] !== 'mikhmon-vendeur' || $sellerRouterUser['address'] !== '10.10.0.0/24' || strpos($sellerRouterUser['comment'], 'auth=') === false) {
     fwrite(STDERR, 'seller RouterOS group must remain read-only and limited to its allowed address' . PHP_EOL);
+    exit(1);
+}
+
+// Un compte gérant/vendeur supprimé puis recréé peut laisser un utilisateur
+// RouterOS résiduel : /user/add échoue alors avec "already exists" et on doit
+// le mettre à jour via /user/set plutôt que remonter une erreur.
+$residualApi = new MikhmonHotspotAssignmentFakeApi();
+$residualApi->responses['/user/print'] = array(array('.id' => '*5', 'name' => 'manucho', 'group' => 'mikhmon-gerant'));
+$residualManager = mikhmon_hotspot_provision_account($residualApi, 'router_user', 'ALB-TECH', 'manager', 'manucho', 'new-pass', 'Manucho');
+if (!$residualManager['ok'] || count($residualApi->calls) !== 4 || $residualApi->calls[2][0] !== '/user/print' || $residualApi->calls[3][0] !== '/user/set') {
+    fwrite(STDERR, 'recreating a manager over a residual RouterOS user must update it via /user/set' . PHP_EOL);
+    exit(1);
+}
+$residualSet = $residualApi->calls[3][1];
+if ($residualSet['.id'] !== '*5' || $residualSet['name'] !== 'manucho' || $residualSet['group'] !== 'mikhmon-gerant') {
+    fwrite(STDERR, 'residual RouterOS user update must target the existing .id and refresh its group/credentials' . PHP_EOL);
     exit(1);
 }
 

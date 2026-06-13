@@ -1,4 +1,43 @@
 <?php
+if (!function_exists('mikhmon_configure_routeros_api')) {
+  function mikhmon_configure_routeros_api($api)
+  {
+    // 3s provoque des lectures vides sur grosses tables, mais 30s bloque trop
+    // longtemps les portails si RouterOS est lent ou indisponible.
+    $api->timeout = 12;
+    $api->attempts = 1;
+    $api->delay = 0;
+    return $api;
+  }
+}
+
+if (!function_exists('mikhmon_comm_with_reconnect')) {
+  /**
+   * Exécute $API->comm($path, $params) et, si le résultat est vide, suppose
+   * qu'une requête précédente sur une grosse table a coupé silencieusement la
+   * connexion RouterOS : rouvre une connexion fraîche et retente une fois.
+   */
+  function mikhmon_comm_with_reconnect($API, $path, $params, $iphost, $userhost, $passwdhost)
+  {
+    $result = $API->comm($path, $params);
+    if (!is_array($result)) {
+      $result = array();
+    }
+
+    if (empty($result) && method_exists($API, 'disconnect') && method_exists($API, 'connect')) {
+      $API->disconnect();
+      if ($API->connect($iphost, $userhost, decrypt($passwdhost))) {
+        $result = $API->comm($path, $params);
+        if (!is_array($result)) {
+          $result = array();
+        }
+      }
+    }
+
+    return $result;
+  }
+}
+
 if (!function_exists('mikhmon_month_map')) {
   function mikhmon_month_map()
   {
@@ -1159,7 +1198,7 @@ if (!function_exists('mikhmon_month_map')) {
         || (float) $summary['month_total'] > 0);
   }
 
-  function mikhmon_dashboard_income_summary($API, $dayKey)
+  function mikhmon_dashboard_income_summary($API, $dayKey, $monthlySales = null)
   {
     $dayKey = mikhmon_normalize_sale_date($dayKey);
     mikhmon_ensure_income_counter_scheduler($API);
@@ -1181,7 +1220,8 @@ if (!function_exists('mikhmon_month_map')) {
     }
 
     $monthKey = mikhmon_sale_month_key($dayKey);
-    $scriptSummary = mikhmon_income_summary_from_scripts(mikhmon_fetch_sales_by_month($API, $monthKey), $dayKey, $monthKey);
+    $scripts = is_array($monthlySales) ? $monthlySales : mikhmon_fetch_sales_by_month($API, $monthKey);
+    $scriptSummary = mikhmon_income_summary_from_scripts($scripts, $dayKey, $monthKey);
     if (mikhmon_income_summary_has_values($scriptSummary)) {
       return $scriptSummary;
     }
@@ -1201,7 +1241,7 @@ if (!function_exists('mikhmon_month_map')) {
    *   projected      – projected month-end total
    *   confidence     – 'low' | 'medium' | 'high'
    */
-  function mikhmon_revenue_forecast($API, $dayKey, $lookbackDays = 7)
+  function mikhmon_revenue_forecast($API, $dayKey, $lookbackDays = 7, $monthlySales = null)
   {
     $dayKey    = mikhmon_normalize_sale_date($dayKey);
     $monthKey  = mikhmon_sale_month_key($dayKey);
@@ -1221,7 +1261,7 @@ if (!function_exists('mikhmon_month_map')) {
     $daysRemaining = $daysInMonth - $dayNum + 1; // include today
 
     // Fetch this month's scripts and group revenue by day
-    $scripts    = mikhmon_fetch_sales_by_month($API, $monthKey);
+    $scripts    = is_array($monthlySales) ? $monthlySales : mikhmon_fetch_sales_by_month($API, $monthKey);
     $dailyTotals = array(); // dayKey => total
     $monthTotal  = 0.0;
 
