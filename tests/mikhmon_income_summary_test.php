@@ -45,8 +45,8 @@ $summary = mikhmon_income_summary_from_scripts($sales, 'may/09/2026', 'may2026')
 $expected = array(
   'today_count' => 3,
   'today_total' => 1800.0,
-  'month_count' => 5,
-  'month_total' => 3800.0,
+  'month_count' => 4,
+  'month_total' => 2300.0,
 );
 
 foreach ($expected as $key => $value) {

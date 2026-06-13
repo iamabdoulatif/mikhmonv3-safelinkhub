@@ -84,7 +84,7 @@ if (!isset($_SESSION["mikhmon"])) {
       );
     }
 
-    $currentMonthTag = strtolower(date("M")) . date("Y");
+    $currentMonthTag = mikhmon_sale_month_key($clockDayKey);
     $currentDayTag = $clockDayKey;
     $monthlySales = mikhmon_fetch_sales_by_month($API, $currentMonthTag);
     $monthlySalesMonthKey = $currentMonthTag;
@@ -93,14 +93,7 @@ if (!isset($_SESSION["mikhmon"])) {
     // qui conserve le commentaire d'origine du ticket. mikhmon_fetch_sales_by_month()
     // peut renvoyer des ventes reconstruites à partir des utilisateurs hotspot
     // consommés (commentaire perdu), ce qui empêcherait toute attribution.
-    $attributedMonthlySales = mikhmon_comm_with_reconnect(
-      $API,
-      "/system/script/print",
-      array("?comment" => "mikhmon"),
-      $iphost,
-      $userhost,
-      $passwdhost
-    );
+    $attributedMonthlySales = mikhmon_fetch_mikhmon_sale_scripts($API);
     if (!empty($attributedMonthlySales)) {
       $monthlySales = mikhmon_unique_sale_scripts(mikhmon_filter_sale_scripts($attributedMonthlySales, '', $currentMonthTag));
     }

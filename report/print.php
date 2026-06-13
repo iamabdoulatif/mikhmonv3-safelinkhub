@@ -66,6 +66,7 @@ if (!isset($_SESSION["mikhmon"])) {
 		$timezone = mikhmon_safe_timezone($gettimezone[0]['time-zone-name'] ?? ($_SESSION['timezone'] ?? 'UTC'));
 		$_SESSION['timezone'] = $timezone;
 	date_default_timezone_set($timezone);
+	$reportClockDayKey = mikhmon_router_clock_day_key($gettimezone[0] ?? array(), $timezone);
 
 	if (isset($remdata)) {
 		if (strlen($idhr) > "0") {
@@ -116,7 +117,8 @@ if (!isset($_SESSION["mikhmon"])) {
 		$shd = "inline-block";
 	} elseif (strlen($idbl) > "0") {
 		if ($API->connect($iphost, $userhost, decrypt($passwdhost))) {
-			$getData = mikhmon_fetch_sales_by_month($API, $idbl);
+			$monthCutoff = (mikhmon_sale_month_key($reportClockDayKey) === strtolower($idbl)) ? $reportClockDayKey : '';
+			$getData = mikhmon_fetch_sales_by_month($API, $idbl, $monthCutoff);
 			$TotalReg = count($getData);
 		}
 		$filedownload = $idbl;
@@ -134,7 +136,8 @@ if (!isset($_SESSION["mikhmon"])) {
 		$shd = "none";
 	} elseif (strlen($idbl) > "0" ) {
 		if ($API->connect($iphost, $userhost, decrypt($passwdhost))) {
-			$getData = mikhmon_fetch_sales_by_month($API, $idbl);
+			$monthCutoff = (mikhmon_sale_month_key($reportClockDayKey) === strtolower($idbl)) ? $reportClockDayKey : '';
+			$getData = mikhmon_fetch_sales_by_month($API, $idbl, $monthCutoff);
 			$TotalReg = count($getData);
 		}
 		$filedownload = $idbl;

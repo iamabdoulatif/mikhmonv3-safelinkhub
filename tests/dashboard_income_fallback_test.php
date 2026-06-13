@@ -48,6 +48,30 @@ class DashboardIncomeFallbackApiStub
     }
 }
 
+class RouterosFilteredScriptApiStub extends DashboardIncomeFallbackApiStub
+{
+    private $allScripts;
+
+    public function __construct($allScripts)
+    {
+        parent::__construct();
+        $this->allScripts = $allScripts;
+    }
+
+    public function comm($path, $params = array())
+    {
+        $this->queries[] = array($path, $params);
+        if ($path === '/system/script/print') {
+            if (isset($params['?comment']) && $params['?comment'] === 'mikhmon') {
+                return array();
+            }
+            return $this->allScripts;
+        }
+
+        return parent::comm($path, $params);
+    }
+}
+
 $missingCountersApi = new DashboardIncomeFallbackApiStub(
     array(),
     array(),
@@ -168,11 +192,15 @@ if ($summary['today_count'] !== 2 || $summary['today_total'] !== 700.0
     fwrite(STDERR, "dashboard must recover from zeroed cache files after refresh\n");
     exit(1);
 }
+$zeroedFallbackReadUsers = false;
 foreach ($zeroedCountersApi->queries as $query) {
-    if ($query[0] === '/system/script/print') {
-        fwrite(STDERR, "dashboard zero-cache recovery must avoid script scans that break RouterOS follow-up reads\n");
-        exit(1);
+    if ($query[0] === '/ip/hotspot/user/print') {
+        $zeroedFallbackReadUsers = true;
     }
+}
+if (!$zeroedFallbackReadUsers) {
+    fwrite(STDERR, "dashboard zero-cache recovery must still fall back to used hotspot users when scripts are absent\n");
+    exit(1);
 }
 
 foreach ($availableCountersApi->queries as $query) {
@@ -217,6 +245,57 @@ foreach ($indexedSalesFallbackApi->queries as $query) {
     }
 }
 
+$routerosFilteredScriptApi = new RouterosFilteredScriptApiStub(array(
+    array(
+        'name' => 'jun/06/2026-|-10:00:00-|-rb4011-1-|-500-|-10.0.0.2-|-AA-|-5d-|-05-JOURS-|-vendeur-alpha',
+        'source' => 'jun/06/2026',
+        'owner' => 'jun2026',
+        'comment' => 'mikhmon',
+    ),
+    array(
+        'name' => 'jun/07/2026-|-11:00:00-|-rb4011-2-|-1000-|-10.0.0.3-|-BB-|-1w-|-01-SEMAINE-|-vendeur-beta',
+        'source' => 'jun/07/2026',
+        'owner' => 'jun2026',
+        'comment' => 'mikhmon',
+    ),
+    array(
+        'name' => 'not-a-sale',
+        'source' => '',
+        'owner' => '',
+        'comment' => 'other',
+    ),
+));
+$rb4011Rows = mikhmon_fetch_sales_by_month($routerosFilteredScriptApi, 'jun2026');
+if (count($rb4011Rows) !== 2 || mikhmon_parse_sale_script($rb4011Rows[0])['user'] !== 'rb4011-1') {
+    fwrite(STDERR, "reports must recover sales when RouterOS comment filters return empty\n");
+    exit(1);
+}
+$routerosFilteredScriptApiForCutoff = new RouterosFilteredScriptApiStub(array(
+    array(
+        'name' => 'jun/06/2026-|-10:00:00-|-rb4011-1-|-500-|-10.0.0.2-|-AA-|-5d-|-05-JOURS-|-vendeur-alpha',
+        'source' => 'jun/06/2026',
+        'owner' => 'jun2026',
+        'comment' => 'mikhmon',
+    ),
+    array(
+        'name' => 'jun/14/2026-|-11:00:00-|-rb4011-future-|-1000-|-10.0.0.3-|-BB-|-1w-|-01-SEMAINE-|-vendeur-beta',
+        'source' => 'jun/14/2026',
+        'owner' => 'jun2026',
+        'comment' => 'mikhmon',
+    ),
+));
+$cutoffRows = mikhmon_fetch_sales_by_month($routerosFilteredScriptApiForCutoff, 'jun2026', 'jun/13/2026');
+if (count($cutoffRows) !== 1 || mikhmon_parse_sale_script($cutoffRows[0])['user'] !== 'rb4011-1') {
+    fwrite(STDERR, "monthly selling report must use the same current-day cutoff as monthly revenue\n");
+    exit(1);
+}
+$summary = mikhmon_dashboard_income_summary($routerosFilteredScriptApi, 'jun/07/2026', $rb4011Rows);
+if ($summary['today_count'] !== 1 || $summary['today_total'] !== 1000.0
+    || $summary['month_count'] !== 2 || $summary['month_total'] !== 1500.0) {
+    fwrite(STDERR, "dashboard revenue must use recovered RouterOS script sales\n");
+    exit(1);
+}
+
 $usedUsersReportApi = new DashboardIncomeFallbackApiStub(
     array(),
     array(),
@@ -255,15 +334,19 @@ $emptyUsedUsersDayApi = new DashboardIncomeFallbackApiStub(
     array(array('name' => 'u1', 'profile' => '01-JOUR', 'comment' => 'jun/07/2026 08:00:00'))
 );
 $rows = mikhmon_fetch_sales_by_day($emptyUsedUsersDayApi, 'jun/07/2026');
-if (count($rows) !== 0) {
-    fwrite(STDERR, "an empty reconstructed day must stay empty instead of mixing in legacy scripts\n");
+if (count($rows) !== 1 || mikhmon_parse_sale_script($rows[0])['user'] !== 'legacy') {
+    fwrite(STDERR, "daily reports must prefer sale scripts over reconstructed hotspot users\n");
     exit(1);
 }
+$sawScriptRead = false;
 foreach ($emptyUsedUsersDayApi->queries as $query) {
     if ($query[0] === '/system/script/print') {
-        fwrite(STDERR, "empty reconstructed days must not scan scripts because large script scans break follow-up RouterOS reads\n");
-        exit(1);
+        $sawScriptRead = true;
     }
+}
+if (!$sawScriptRead) {
+    fwrite(STDERR, "daily reports must read sale scripts before hotspot reconstruction\n");
+    exit(1);
 }
 
 echo "dashboard_income_fallback_test passed\n";

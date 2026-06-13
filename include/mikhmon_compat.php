@@ -883,37 +883,91 @@ if (!function_exists('mikhmon_month_map')) {
     return $owners;
   }
 
+  function mikhmon_fetch_mikhmon_sale_scripts($API)
+  {
+    $data = $API->comm('/system/script/print', array('?comment' => 'mikhmon'));
+    if (is_array($data) && !empty($data)) {
+      return mikhmon_unique_sale_scripts($data);
+    }
+
+    $data = $API->comm('/system/script/print', array('.proplist' => 'name,source,owner,comment'));
+    if (!is_array($data)) {
+      return array();
+    }
+
+    $rows = array();
+    foreach ($data as $row) {
+      if (!is_array($row)) {
+        continue;
+      }
+      $comment = isset($row['comment']) ? strtolower(trim((string) $row['comment'])) : '';
+      $name = isset($row['name']) ? (string) $row['name'] : '';
+      $sale = mikhmon_parse_sale_script($row);
+      if ($comment === 'mikhmon' || ($comment === '' && strpos($name, '-|-') !== false && $sale['date'] !== '')) {
+        $rows[] = $row;
+      }
+    }
+
+    return mikhmon_unique_sale_scripts($rows);
+  }
+
   function mikhmon_fetch_sales_by_day($API, $dayKey)
   {
     $normalizedDay = mikhmon_normalize_sale_date($dayKey);
     $monthKey = mikhmon_sale_month_key($normalizedDay);
+    $data = mikhmon_fetch_mikhmon_sale_scripts($API);
+    if (is_array($data) && !empty($data)) {
+      $rows = mikhmon_filter_sale_scripts(mikhmon_unique_sale_scripts($data), $normalizedDay, '');
+      if (!empty($rows)) {
+        return $rows;
+      }
+      return array();
+    }
+
     $monthRows = mikhmon_sales_from_used_hotspot_users($API, '', $monthKey);
     if (!empty($monthRows)) {
       return mikhmon_filter_sale_scripts($monthRows, $normalizedDay, '');
     }
-
-    $data = $API->comm('/system/script/print', array('?comment' => 'mikhmon'));
-    if (is_array($data)) {
-      return mikhmon_filter_sale_scripts(mikhmon_unique_sale_scripts($data), $normalizedDay, '');
-    }
     return array();
   }
 
-  function mikhmon_fetch_sales_by_month($API, $monthKey)
+  function mikhmon_sales_through_day($sales, $dayKey)
+  {
+    $dayIso = mikhmon_iso_date_from_day_key($dayKey);
+    if ($dayIso === '') {
+      return mikhmon_unique_sale_scripts($sales);
+    }
+
+    $rows = array();
+    foreach (mikhmon_unique_sale_scripts($sales) as $script) {
+      $sale = mikhmon_parse_sale_script($script);
+      $saleIso = mikhmon_iso_date_from_day_key($sale['date']);
+      if ($saleIso === '' || $saleIso <= $dayIso) {
+        $rows[] = $script;
+      }
+    }
+
+    return $rows;
+  }
+
+  function mikhmon_fetch_sales_by_month($API, $monthKey, $throughDayKey = '')
   {
     $monthKey = strtolower(trim((string) $monthKey));
     $rows = array();
-    $usedRows = mikhmon_sales_from_used_hotspot_users($API, '', $monthKey);
-    if (!empty($usedRows)) {
-      return mikhmon_unique_sale_scripts($usedRows);
-    }
-
-    $data = $API->comm('/system/script/print', array('?comment' => 'mikhmon'));
+    $data = mikhmon_fetch_mikhmon_sale_scripts($API);
     if (is_array($data)) {
       $rows = mikhmon_filter_sale_scripts($data, '', $monthKey);
     }
+    if (!empty($rows)) {
+      return mikhmon_sales_through_day($rows, $throughDayKey);
+    }
 
-    return mikhmon_unique_sale_scripts($rows);
+    $usedRows = mikhmon_sales_from_used_hotspot_users($API, '', $monthKey);
+    if (!empty($usedRows)) {
+      return mikhmon_sales_through_day($usedRows, $throughDayKey);
+    }
+
+    return mikhmon_sales_through_day($rows, $throughDayKey);
   }
 
   function mikhmon_income_summary_from_scripts($scripts, $dayKey, $monthKey)
