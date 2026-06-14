@@ -1047,6 +1047,19 @@ if (!function_exists('mikhmon_month_map')) {
       }
     }
 
+    if (empty($API->connected) && method_exists($API, 'disconnect') && method_exists($API, 'connect')
+        && trim((string) $iphost) !== '' && function_exists('decrypt')) {
+      $API->disconnect();
+      $API->connect($iphost, $userhost, decrypt($passwdhost));
+    }
+
+    if (!empty($API->connected)) {
+      $rows = mikhmon_sales_from_used_hotspot_users($API, '', $monthKey);
+      if (!empty($rows)) {
+        return mikhmon_sales_through_day($rows, $throughDayKey);
+      }
+    }
+
     return array();
   }
 
@@ -1241,6 +1254,130 @@ if (!function_exists('mikhmon_month_map')) {
     );
   }
 
+  function mikhmon_hotspot_profile_rows_with_on_login($API, $onlyProfileNames = array())
+  {
+    $originalTimeout = null;
+    if (is_object($API) && isset($API->timeout)) {
+      $originalTimeout = $API->timeout;
+      if ((int) $API->timeout < 120) {
+        $API->timeout = 120;
+      }
+    }
+
+    $nameRows = $API->comm('/ip/hotspot/user/profile/print', array(
+      '.proplist' => '.id,name',
+    ));
+    if (!is_array($nameRows)) {
+      if ($originalTimeout !== null) {
+        $API->timeout = $originalTimeout;
+      }
+      return array();
+    }
+
+    $rows = array();
+    $only = array();
+    if (is_array($onlyProfileNames) && !empty($onlyProfileNames)) {
+      foreach ($onlyProfileNames as $profileName) {
+        $profileName = trim((string) $profileName);
+        if ($profileName !== '') {
+          $only[$profileName] = true;
+        }
+      }
+    }
+
+    foreach ($nameRows as $nameRow) {
+      $profileName = isset($nameRow['name']) ? trim((string) $nameRow['name']) : '';
+      if ($profileName === '') {
+        continue;
+      }
+      if (!empty($only) && !isset($only[$profileName])) {
+        continue;
+      }
+
+      $detailRows = $API->comm('/ip/hotspot/user/profile/print', array(
+        '?name' => $profileName,
+        '.proplist' => '.id,name,on-login',
+      ));
+      if (is_array($detailRows) && !empty($detailRows[0])) {
+        $rows[] = $detailRows[0];
+      } else {
+        $rows[] = $nameRow;
+      }
+    }
+
+    if ($originalTimeout !== null) {
+      $API->timeout = $originalTimeout;
+    }
+
+    return $rows;
+  }
+
+  function mikhmon_profile_meta_cache_file()
+  {
+    return dirname(__DIR__) . '/data/mikhmon_profile_meta_cache.json';
+  }
+
+  function mikhmon_read_profile_meta_cache()
+  {
+    $file = mikhmon_profile_meta_cache_file();
+    if (!is_file($file)) {
+      return array();
+    }
+
+    $data = json_decode((string) file_get_contents($file), true);
+    return is_array($data) ? $data : array();
+  }
+
+  function mikhmon_write_profile_meta_cache($cache)
+  {
+    $file = mikhmon_profile_meta_cache_file();
+    $dir = dirname($file);
+    if (!is_dir($dir)) {
+      @mkdir($dir, 0775, true);
+    }
+    if (is_dir($dir)) {
+      @file_put_contents($file, json_encode($cache, JSON_PRETTY_PRINT), LOCK_EX);
+    }
+  }
+
+  function mikhmon_profile_income_meta_map($API, $profileNames)
+  {
+    $profileNames = is_array($profileNames) ? array_values(array_unique(array_filter(array_map('trim', $profileNames)))) : array();
+    if (empty($profileNames)) {
+      return array();
+    }
+
+    $cache = mikhmon_read_profile_meta_cache();
+    $profiles = array();
+    $missing = array();
+    foreach ($profileNames as $profileName) {
+      if (isset($cache[$profileName]['price'], $cache[$profileName]['validity'], $cache[$profileName]['validity_seconds'])
+          && (float) $cache[$profileName]['price'] > 0 && (int) $cache[$profileName]['validity_seconds'] > 0) {
+        $profiles[$profileName] = $cache[$profileName];
+      } else {
+        $missing[] = $profileName;
+      }
+    }
+
+    if (!empty($missing)) {
+      foreach (mikhmon_hotspot_profile_rows_with_on_login($API, $missing) as $profileRow) {
+        $profileName = isset($profileRow['name']) ? trim((string) $profileRow['name']) : '';
+        if ($profileName === '') {
+          continue;
+        }
+        $meta = mikhmon_profile_income_meta_from_on_login(isset($profileRow['on-login']) ? $profileRow['on-login'] : '');
+        $meta['validity_seconds'] = mikhmon_routeros_duration_seconds($meta['validity']);
+        if ($meta['price'] > 0 && $meta['validity_seconds'] > 0) {
+          $profiles[$profileName] = $meta;
+          $cache[$profileName] = $meta;
+        }
+      }
+      mikhmon_write_profile_meta_cache($cache);
+    }
+
+    return $profiles;
+  }
+
   function mikhmon_income_summary_from_used_hotspot_users($API, $dayKey)
   {
     $dayKey = mikhmon_normalize_sale_date($dayKey);
@@ -1256,27 +1393,21 @@ if (!function_exists('mikhmon_month_map')) {
       return $summary;
     }
 
-    $profileRows = $API->comm('/ip/hotspot/user/profile/print', array('.proplist' => 'name,on-login'));
-    $profiles = array();
-    if (is_array($profileRows)) {
-      foreach ($profileRows as $profileRow) {
-        $profileName = isset($profileRow['name']) ? trim((string) $profileRow['name']) : '';
-        if ($profileName === '') {
-          continue;
-        }
-        $meta = mikhmon_profile_income_meta_from_on_login(isset($profileRow['on-login']) ? $profileRow['on-login'] : '');
-        $meta['validity_seconds'] = mikhmon_routeros_duration_seconds($meta['validity']);
-        if ($meta['price'] > 0 && $meta['validity_seconds'] > 0) {
-          $profiles[$profileName] = $meta;
-        }
-      }
-    }
-    if (empty($profiles)) {
+    $userRows = $API->comm('/ip/hotspot/user/print', array('.proplist' => 'name,profile,comment'));
+    if (!is_array($userRows)) {
       return $summary;
     }
 
-    $userRows = $API->comm('/ip/hotspot/user/print', array('.proplist' => 'name,profile,comment'));
-    if (!is_array($userRows)) {
+    $candidateProfiles = array();
+    foreach ($userRows as $userRow) {
+      $profileName = isset($userRow['profile']) ? trim((string) $userRow['profile']) : '';
+      if ($profileName !== '' && mikhmon_expiration_comment_datetime(isset($userRow['comment']) ? $userRow['comment'] : '')) {
+        $candidateProfiles[$profileName] = true;
+      }
+    }
+
+    $profiles = mikhmon_profile_income_meta_map($API, array_keys($candidateProfiles));
+    if (empty($profiles)) {
       return $summary;
     }
 
@@ -1320,27 +1451,21 @@ if (!function_exists('mikhmon_month_map')) {
       $monthKey = mikhmon_sale_month_key($dayKey);
     }
 
-    $profileRows = $API->comm('/ip/hotspot/user/profile/print', array('.proplist' => 'name,on-login'));
-    $profiles = array();
-    if (is_array($profileRows)) {
-      foreach ($profileRows as $profileRow) {
-        $profileName = isset($profileRow['name']) ? trim((string) $profileRow['name']) : '';
-        if ($profileName === '') {
-          continue;
-        }
-        $meta = mikhmon_profile_income_meta_from_on_login(isset($profileRow['on-login']) ? $profileRow['on-login'] : '');
-        $meta['validity_seconds'] = mikhmon_routeros_duration_seconds($meta['validity']);
-        if ($meta['price'] > 0 && $meta['validity_seconds'] > 0) {
-          $profiles[$profileName] = $meta;
-        }
-      }
-    }
-    if (empty($profiles)) {
+    $userRows = $API->comm('/ip/hotspot/user/print', array('.proplist' => 'name,profile,comment'));
+    if (!is_array($userRows)) {
       return array();
     }
 
-    $userRows = $API->comm('/ip/hotspot/user/print', array('.proplist' => 'name,profile,comment'));
-    if (!is_array($userRows)) {
+    $candidateProfiles = array();
+    foreach ($userRows as $userRow) {
+      $profileName = isset($userRow['profile']) ? trim((string) $userRow['profile']) : '';
+      if ($profileName !== '' && mikhmon_expiration_comment_datetime(isset($userRow['comment']) ? $userRow['comment'] : '')) {
+        $candidateProfiles[$profileName] = true;
+      }
+    }
+
+    $profiles = mikhmon_profile_income_meta_map($API, array_keys($candidateProfiles));
+    if (empty($profiles)) {
       return array();
     }
 
@@ -1743,9 +1868,7 @@ if (!function_exists('mikhmon_month_map')) {
 
   function mikhmon_upgrade_legacy_expiration_profiles($API)
   {
-    $profiles = $API->comm('/ip/hotspot/user/profile/print', array(
-      '.proplist' => '.id,name,on-login',
-    ));
+    $profiles = mikhmon_hotspot_profile_rows_with_on_login($API);
     if (!is_array($profiles)) {
       return 0;
     }

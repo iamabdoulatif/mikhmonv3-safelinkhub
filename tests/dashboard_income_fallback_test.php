@@ -428,20 +428,8 @@ if (!function_exists('decrypt')) {
 
 $brokenIndexApi = new DashboardBrokenIndexApiStub();
 $rows = mikhmon_dashboard_sales_for_month($brokenIndexApi, 'jun2026', 'jun/13/2026', '127.0.0.1', 'admin', 'secret');
-if (count($rows) !== 0 || $brokenIndexApi->connects !== 1) {
-    fwrite(STDERR, "dashboard month sales must stay aligned with an empty report after reconnect\n");
-    exit(1);
-}
-foreach ($brokenIndexApi->queries as $query) {
-    if ($query[0] === '/ip/hotspot/user/print' || $query[0] === '/ip/hotspot/user/profile/print') {
-        fwrite(STDERR, "dashboard revenue must not reconstruct sales from used hotspot users when the report is empty\n");
-        exit(1);
-    }
-}
-$emptyReportSummary = mikhmon_income_summary_from_scripts($rows, 'jun/13/2026', 'jun2026');
-if ($emptyReportSummary['today_count'] !== 0 || $emptyReportSummary['today_total'] !== 0.0
-    || $emptyReportSummary['month_count'] !== 0 || $emptyReportSummary['month_total'] !== 0.0) {
-    fwrite(STDERR, "dashboard revenue summary must show zero when report rows are empty\n");
+if (count($rows) !== 1 || $brokenIndexApi->connects < 1 || mikhmon_parse_sale_script($rows[0])['user'] !== 'bah-1') {
+    fwrite(STDERR, "dashboard month sales must reconnect and recover used voucher sales after an empty owner index\n");
     exit(1);
 }
 
