@@ -168,6 +168,30 @@ if ($summary['today_count'] !== 1 || $summary['today_total'] !== 200.0
     exit(1);
 }
 
+$staleCounterValues = array(
+    'mikhmon-income-day-jun2026-05-count.txt' => '0',
+    'mikhmon-income-day-jun2026-05-total.txt' => '0',
+    'mikhmon-income-month-jun2026-count.txt' => '1',
+    'mikhmon-income-month-jun2026-total.txt' => '200',
+);
+$staleCountersApi = new DashboardIncomeFallbackApiStub(
+    $staleCounterValues,
+    array(),
+    array(
+        array('name' => '01-JOUR', 'on-login' => ':put (",remc,200,1d,200,,Disable,");'),
+        array('name' => '05-JOURS', 'on-login' => ':put (",remc,500,5d,500,,Disable,");'),
+    ),
+    array(
+        array('name' => 'u1', 'profile' => '01-JOUR', 'comment' => 'jun/06/2026 12:00:00'),
+        array('name' => 'u2', 'profile' => '05-JOURS', 'comment' => 'jun/10/2026 08:00:00'),
+    )
+);
+$summary = mikhmon_dashboard_income_summary($staleCountersApi, 'jun/05/2026');
+if ($summary['month_count'] !== 2 || $summary['month_total'] !== 700.0) {
+    fwrite(STDERR, "dashboard must replace stale monthly counters when reconstructed voucher sales are higher\n");
+    exit(1);
+}
+
 $zeroedCounterValues = array(
     'mikhmon-income-day-jun2026-05-count.txt' => '0',
     'mikhmon-income-day-jun2026-05-total.txt' => '0',
@@ -346,6 +370,78 @@ foreach ($emptyUsedUsersDayApi->queries as $query) {
 }
 if (!$sawScriptRead) {
     fwrite(STDERR, "daily reports must read sale scripts before hotspot reconstruction\n");
+    exit(1);
+}
+
+class DashboardBrokenIndexApiStub
+{
+    public $connected = true;
+    public $connects = 0;
+    public $disconnects = 0;
+    public $queries = array();
+
+    public function comm($path, $params = array())
+    {
+        $this->queries[] = array($path, $params);
+        if ($path === '/system/script/print') {
+            $this->connected = false;
+            return array();
+        }
+
+        if (!$this->connected) {
+            return array();
+        }
+
+        if ($path === '/ip/hotspot/user/profile/print') {
+            return array(array('name' => '01-JOUR', 'on-login' => ':put (",remc,200,1d,200,,Disable,");'));
+        }
+
+        if ($path === '/ip/hotspot/user/print') {
+            return array(
+                array('name' => 'bah-1', 'profile' => '01-JOUR', 'comment' => 'jun/06/2026 08:00:00'),
+                array('name' => 'future', 'profile' => '01-JOUR', 'comment' => 'jun/15/2026 08:00:00'),
+            );
+        }
+
+        return array();
+    }
+
+    public function disconnect()
+    {
+        $this->disconnects++;
+        $this->connected = false;
+    }
+
+    public function connect($iphost, $userhost, $passwdhost)
+    {
+        $this->connects++;
+        $this->connected = true;
+        return true;
+    }
+}
+
+if (!function_exists('decrypt')) {
+    function decrypt($value) {
+        return $value;
+    }
+}
+
+$brokenIndexApi = new DashboardBrokenIndexApiStub();
+$rows = mikhmon_dashboard_sales_for_month($brokenIndexApi, 'jun2026', 'jun/13/2026', '127.0.0.1', 'admin', 'secret');
+if (count($rows) !== 0 || $brokenIndexApi->connects !== 1) {
+    fwrite(STDERR, "dashboard month sales must stay aligned with an empty report after reconnect\n");
+    exit(1);
+}
+foreach ($brokenIndexApi->queries as $query) {
+    if ($query[0] === '/ip/hotspot/user/print' || $query[0] === '/ip/hotspot/user/profile/print') {
+        fwrite(STDERR, "dashboard revenue must not reconstruct sales from used hotspot users when the report is empty\n");
+        exit(1);
+    }
+}
+$emptyReportSummary = mikhmon_income_summary_from_scripts($rows, 'jun/13/2026', 'jun2026');
+if ($emptyReportSummary['today_count'] !== 0 || $emptyReportSummary['today_total'] !== 0.0
+    || $emptyReportSummary['month_count'] !== 0 || $emptyReportSummary['month_total'] !== 0.0) {
+    fwrite(STDERR, "dashboard revenue summary must show zero when report rows are empty\n");
     exit(1);
 }
 

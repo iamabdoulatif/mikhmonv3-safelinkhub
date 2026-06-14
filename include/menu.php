@@ -24,10 +24,22 @@ if (!isset($_SESSION["mikhmon"])) {
 } else {
 
 include ('./include/version.php');
+include_once('./include/mikhmon_compat.php');
 
   $adminDashboardUrl = !empty($session) ? './?session=' . urlencode($session) : './admin.php?id=sessions';
   $sellerAdminUrl = './admin.php?id=sellers' . (!empty($session) ? '&session=' . urlencode($session) : '');
   $managerAdminUrl = './admin.php?id=sellers&tab=managers' . (!empty($session) ? '&session=' . urlencode($session) : '');
+  $menuReportMonth = strtolower(date("M")) . date("Y");
+  if (isset($API) && is_object($API) && !empty($API->connected) && function_exists('mikhmon_router_clock_day_key') && function_exists('mikhmon_sale_month_key')) {
+    $menuClockRows = $API->comm("/system/clock/print");
+    if (is_array($menuClockRows) && isset($menuClockRows[0])) {
+      $routerDayKey = mikhmon_router_clock_day_key($menuClockRows[0], $_SESSION['timezone'] ?? 'UTC');
+      $routerMonthKey = mikhmon_sale_month_key($routerDayKey);
+      if ($routerMonthKey !== '') {
+        $menuReportMonth = $routerMonthKey;
+      }
+    }
+  }
 
   $btnmenuactive = "font-weight: bold;background-color: #f9f9f9; color: #000000";
   if ($hotspot == "dashboard" || substr(end(explode("/", $url)), 0, 8) == "?session") {
@@ -392,7 +404,7 @@ include('./info.php');
   </div>
   <div class="dropdown-container <?= $lmenu; ?>">
     <a href="./?hotspot=log&session=<?= $session; ?>" class="<?= $slog; ?>"> <i class="fa fa-wifi "></i> <?= $_hotspot_log ?> </a>
-    <a href="./?report=userlog&idbl=<?= strtolower(date("M")) . date("Y"); ?>&session=<?= $session; ?>" class=" <?= $sulog; ?>"> <i class="fa fa-users "></i> <?= $_user_log ?> </a>
+    <a href="./?report=userlog&idbl=<?= $menuReportMonth; ?>&session=<?= $session; ?>" class=" <?= $sulog; ?>"> <i class="fa fa-users "></i> <?= $_user_log ?> </a>
   </div>
   <!--system-->
   <div class="dropdown-btn <?= $sysmenu; ?>"><i class=" fa fa-gear"></i> <?= $_system ?>
@@ -408,7 +420,7 @@ include('./info.php');
   <!--traffic monitor-->
   <a href="./?interface=traffic-monitor&session=<?= $session; ?>" class="menu <?= $strafficmonitor; ?>"><i class=" fa fa-area-chart"></i> <?= $_traffic_monitor ?></a>
   <!--report-->
-  <a href="./?report=selling&idbl=<?= strtolower(date("M")) . date("Y"); ?>&session=<?= $session; ?>" class="menu <?= $sselling; ?>"><i class="nav-icon fa fa-money"></i> <?= $_report ?></a>
+  <a href="./?report=selling&idbl=<?= $menuReportMonth; ?>&session=<?= $session; ?>" class="menu <?= $sselling; ?>"><i class="nav-icon fa fa-money"></i> <?= $_report ?></a>
   <!--vendeurs & gérants-->
   <a href="<?= $sellerAdminUrl; ?>" class="menu"><i class="fa fa-users nav-vendor-icon"></i> <?= isset($_sellers) ? $_sellers : 'Vendors' ?></a>
   <a href="<?= $managerAdminUrl; ?>" class="menu"><i class="fa fa-briefcase nav-manager-icon"></i> <?= isset($_managers) ? $_managers : 'Managers' ?></a>

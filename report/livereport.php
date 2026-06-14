@@ -33,16 +33,18 @@ include('../lang/'.$langid.'.php');
 
 
 // load config
-  include('../include/config.php');
-  include('../include/readcfg.php');
-	  include_once('../include/mikhmon_compat.php');
-  include('../include/sellers_config.php');
+include('../include/config.php');
+include('../include/readcfg.php');
+include_once('../include/mikhmon_compat.php');
+include_once('../include/seller_ticket_helper.php');
+include('../include/sellers_config.php');
 
 // routeros api
   include_once('../lib/routeros_api.class.php');
   include_once('../lib/formatbytesbites.php');
   $API = new RouterosAPI();
   $API->debug = false;
+  mikhmon_configure_routeros_api($API);
   $API->connect($iphost, $userhost, decrypt($passwdhost));
 
   if ($livereport == "disable") {
@@ -51,34 +53,18 @@ include('../lang/'.$langid.'.php');
   } else {
     $logh = "350px";
     $lreport = "style='display:block;'";
-// get selling report
-    $thisD = date("d");
-    $thisM = strtolower(date("M"));
-    $thisY = date("Y");
-
-    if (strlen($thisD) == 1) {
-      $thisD = "0" . $thisD;
-    } else {
-      $thisD = $thisD;
-    }
-
-    $idhr = $thisM . "/" . $thisD . "/" . $thisY;
-    $idbl = $thisM . $thisY;
+    $clockRows = $API->comm("/system/clock/print");
+    $idhr = mikhmon_router_clock_day_key(isset($clockRows[0]) ? $clockRows[0] : array(), $_SESSION['timezone'] ?? 'UTC');
+    $idbl = mikhmon_sale_month_key($idhr);
 
     $_SESSION[$session.'idhr'] = $idhr;
 
-   /* $getSRHr = $API->comm("/system/script/print", array(
-      "?source" => "$idhr",
-    ));
-    $TotalRHr = count($getSRHr);
-    $_SESSION[$session.'totalHr'] = $TotalRHr;*/
-    $getSales = $API->comm("/system/script/print", array(
-      "?comment" => "mikhmon",
-    ));
-    $TotalRBl = 0;
-    $TotalRHr = 0;
-    $tHr = 0;
-    $tBl = 0;
+    $getSales = mikhmon_dashboard_sales_for_month($API, $idbl, $idhr, $iphost, $userhost, $passwdhost);
+    $incomeSummary = mikhmon_income_summary_from_scripts($getSales, $idhr, $idbl);
+    $TotalRHr = (int) $incomeSummary['today_count'];
+    $TotalRBl = (int) $incomeSummary['month_count'];
+    $tHr = (float) $incomeSummary['today_total'];
+    $tBl = (float) $incomeSummary['month_total'];
 
     // per-seller counters with profile breakdown
     $sellerStats = array();
@@ -92,23 +78,22 @@ include('../lang/'.$langid.'.php');
       }
     }
 
+    if (function_exists('mikhmon_seller_lot_owner_map_from_users') && function_exists('mikhmon_enrich_sales_with_lot_owner')) {
+      $hotspotUserRows = mikhmon_comm_with_reconnect($API, '/ip/hotspot/user/print', array(
+        '.proplist' => '.id,name,profile,comment,uptime',
+      ), $iphost, $userhost, $passwdhost);
+      if (is_array($hotspotUserRows)) {
+        $lotOwnerUsers = array_values(array_filter($hotspotUserRows, 'mikhmon_hotspot_user_is_available'));
+        $lotOwnerMap = mikhmon_seller_lot_owner_map_from_users($lotOwnerUsers, $sellers_data);
+        $getSales = mikhmon_enrich_sales_with_lot_owner($getSales, $lotOwnerMap, $sellers_data);
+      }
+    }
     foreach ($getSales as $row) {
       $sale = mikhmon_parse_sale_script($row);
       if ($sale['month_key'] == $idbl) {
-        $tBl += mikhmon_parse_money_amount($sale['price']);
-        $TotalRBl++;
-
-        if ($sale['date'] == $idhr) {
-          $tHr += mikhmon_parse_money_amount($sale['price']);
-          $TotalRHr++;
-        }
-
-        // match sale to a seller via comment field
-        $rawComment = strtolower(trim($sale['comment']));
+        $matchedSeller = mikhmon_comment_seller_key(isset($sale['comment']) ? $sale['comment'] : '', $sellers_data);
         foreach (array_keys($sellerStats) as $sk) {
-          $suffix = '-' . strtolower($sk);
-          if ($rawComment === strtolower($sk) ||
-              substr($rawComment, -strlen($suffix)) === $suffix) {
+          if ($matchedSeller === $sk) {
             $prof  = ($sale['profile'] !== '') ? $sale['profile'] : '(sans profil)';
             $price = mikhmon_parse_money_amount($sale['price']);
             if (!isset($sellerStats[$sk]['profiles'][$prof])) {

@@ -51,6 +51,36 @@ if (!isset($_SESSION["mikhmon"])) {
     }
   }
 
+  $incomeTodayCount = 0;
+  $incomeTodayTotal = 0.0;
+  $incomeMonthCount = 0;
+  $incomeMonthTotal = 0.0;
+  $incomeTodayFormatted = mikhmon_format_money_amount(0, $currency, $cekindo);
+  $incomeMonthFormatted = mikhmon_format_money_amount(0, $currency, $cekindo);
+  $revenueForecast = null;
+  $reportMonthlySales = null;
+  if ($livereport != "disable") {
+    $currentDayKey = $clockDayKey;
+    $currentMonthKey = mikhmon_sale_month_key($clockDayKey);
+    $reportMonthlySales = mikhmon_dashboard_sales_for_month($API, $currentMonthKey, $clockDayKey, $iphost, $userhost, $passwdhost);
+    $incomeSummary = mikhmon_income_summary_from_scripts($reportMonthlySales, $clockDayKey, $currentMonthKey);
+    $incomeTodayCount = $incomeSummary['today_count'];
+    $incomeTodayTotal = $incomeSummary['today_total'];
+    $incomeMonthCount = $incomeSummary['month_count'];
+    $incomeMonthTotal = $incomeSummary['month_total'];
+
+    $incomeTodayFormatted = mikhmon_format_money_amount($incomeTodayTotal, $currency, $cekindo);
+    $incomeMonthFormatted = mikhmon_format_money_amount($incomeMonthTotal, $currency, $cekindo);
+
+    $_SESSION[$session.'idhr'] = $currentDayKey;
+    $_SESSION[$session.'totalHr'] = $incomeTodayCount;
+    $_SESSION[$session.'totalBl'] = $incomeMonthCount;
+    $_SESSION[$session.'dincome'] = $incomeTodayFormatted;
+    $_SESSION[$session.'mincome'] = $incomeMonthFormatted;
+
+    $revenueForecast = mikhmon_revenue_forecast($API, $clockDayKey, 7, $reportMonthlySales);
+  }
+
   $vendorAnalytics = array();
   $vendorRecentSales = array();
   $vendorTodayTickets = 0;
@@ -86,16 +116,20 @@ if (!isset($_SESSION["mikhmon"])) {
 
     $currentMonthTag = mikhmon_sale_month_key($clockDayKey);
     $currentDayTag = $clockDayKey;
-    $monthlySales = mikhmon_fetch_sales_by_month($API, $currentMonthTag);
+    $monthlySales = is_array($reportMonthlySales)
+      ? $reportMonthlySales
+      : mikhmon_dashboard_sales_for_month($API, $currentMonthTag, $currentDayTag, $iphost, $userhost, $passwdhost);
     $monthlySalesMonthKey = $currentMonthTag;
 
-    // Pour l'attribution vendeur, /system/script/print est la seule source
-    // qui conserve le commentaire d'origine du ticket. mikhmon_fetch_sales_by_month()
-    // peut renvoyer des ventes reconstruites à partir des utilisateurs hotspot
-    // consommés (commentaire perdu), ce qui empêcherait toute attribution.
-    $attributedMonthlySales = mikhmon_fetch_mikhmon_sale_scripts($API);
-    if (!empty($attributedMonthlySales)) {
-      $monthlySales = mikhmon_unique_sale_scripts(mikhmon_filter_sale_scripts($attributedMonthlySales, '', $currentMonthTag));
+    if (function_exists('mikhmon_seller_lot_owner_map_from_users') && function_exists('mikhmon_enrich_sales_with_lot_owner')) {
+      $dashboardHotspotUsers = mikhmon_comm_with_reconnect($API, '/ip/hotspot/user/print', array(
+        '.proplist' => '.id,name,profile,comment,uptime',
+      ), $iphost, $userhost, $passwdhost);
+      if (is_array($dashboardHotspotUsers)) {
+        $dashboardLotOwnerUsers = array_values(array_filter($dashboardHotspotUsers, 'mikhmon_hotspot_user_is_available'));
+        $lotOwnerMap = mikhmon_seller_lot_owner_map_from_users($dashboardLotOwnerUsers, $dashboardSellersData);
+        $monthlySales = mikhmon_enrich_sales_with_lot_owner($monthlySales, $lotOwnerMap, $dashboardSellersData);
+      }
     }
 
     if (is_array($monthlySales)) {
@@ -110,7 +144,7 @@ if (!isset($_SESSION["mikhmon"])) {
         $salePrice = mikhmon_parse_money_amount(isset($sale['price']) ? $sale['price'] : 0);
         $saleProfile = isset($sale['profile']) ? trim($sale['profile']) : '';
         $saleComment = isset($sale['comment']) ? trim($sale['comment']) : '';
-        $sellerKey = mikhmon_comment_seller_key($saleComment, $sellers_data);
+        $sellerKey = mikhmon_comment_seller_key($saleComment, $dashboardSellersData);
         if ($sellerKey === '' || !isset($vendorAnalytics[$sellerKey])) {
           continue;
         }
@@ -190,30 +224,22 @@ if (!isset($_SESSION["mikhmon"])) {
   $THotspotLog = count($getlog);
 */
 // get & counting hotspot users
-  $countallusers = $API->comm("/ip/hotspot/user/print", array("count-only" => ""));
-  if ($countallusers < 2) {
-    $uunit = "item";
-  } elseif ($countallusers > 1) {
-    $uunit = "items";
-  }
+  $countallusers = mikhmon_count_only_result($API->comm("/ip/hotspot/user/print", array("count-only" => "")));
+  $uunit = ($countallusers < 2) ? "item" : "items";
 
 // get & counting hotspot active
-  $counthotspotactive = $API->comm("/ip/hotspot/active/print", array("count-only" => ""));
-  if ($counthotspotactive < 2) {
-    $hunit = "item";
-  } elseif ($counthotspotactive > 1) {
-    $hunit = "items";
-  }
+  $counthotspotactive = mikhmon_count_only_result($API->comm("/ip/hotspot/active/print", array("count-only" => "")));
+  $hunit = ($counthotspotactive < 2) ? "item" : "items";
 
 // get & counting pppoe resources
-  $countpppactive = $API->comm("/ppp/active/print", array("count-only" => ""));
-  $countpppprofiles = $API->comm("/ppp/profile/print", array("count-only" => ""));
-  $countpppsecrets = $API->comm("/ppp/secret/print", array("count-only" => ""));
-  $countpppoeservers = $API->comm("/interface/pppoe-server/server/print", array("count-only" => ""));
-  $pactiveunit = ((int)$countpppactive > 1) ? "items" : "item";
-  $pprofileunit = ((int)$countpppprofiles > 1) ? "items" : "item";
-  $psecretunit = ((int)$countpppsecrets > 1) ? "items" : "item";
-  $pppoeserverunit = ((int)$countpppoeservers > 1) ? "items" : "item";
+  $countpppactive = mikhmon_count_only_result($API->comm("/ppp/active/print", array("count-only" => "")));
+  $countpppprofiles = mikhmon_count_only_result($API->comm("/ppp/profile/print", array("count-only" => "")));
+  $countpppsecrets = mikhmon_count_only_result($API->comm("/ppp/secret/print", array("count-only" => "")));
+  $countpppoeservers = mikhmon_count_only_result($API->comm("/interface/pppoe-server/server/print", array("count-only" => "")));
+  $pactiveunit = ($countpppactive > 1) ? "items" : "item";
+  $pprofileunit = ($countpppprofiles > 1) ? "items" : "item";
+  $psecretunit = ($countpppsecrets > 1) ? "items" : "item";
+  $pppoeserverunit = ($countpppoeservers > 1) ? "items" : "item";
 
   if ($livereport == "disable") {
     $logh = "457px";
@@ -223,34 +249,7 @@ if (!isset($_SESSION["mikhmon"])) {
     $lreport = "style='display:block;'";
   }
 
-  $incomeTodayCount = 0;
-  $incomeTodayTotal = 0.0;
-  $incomeMonthCount = 0;
-  $incomeMonthTotal = 0.0;
-  $incomeTodayFormatted = mikhmon_format_money_amount(0, $currency, $cekindo);
-  $incomeMonthFormatted = mikhmon_format_money_amount(0, $currency, $cekindo);
-  $revenueForecast = null;
-  if ($livereport != "disable") {
-    $currentDayKey = $clockDayKey;
-    $currentMonthKey = mikhmon_sale_month_key($clockDayKey);
-    $reportMonthlySales = mikhmon_fetch_sales_by_month($API, $currentMonthKey);
-    $incomeSummary = mikhmon_dashboard_income_summary($API, $clockDayKey, $reportMonthlySales);
-    $incomeTodayCount = $incomeSummary['today_count'];
-    $incomeTodayTotal = $incomeSummary['today_total'];
-    $incomeMonthCount = $incomeSummary['month_count'];
-    $incomeMonthTotal = $incomeSummary['month_total'];
-
-    $incomeTodayFormatted = mikhmon_format_money_amount($incomeTodayTotal, $currency, $cekindo);
-    $incomeMonthFormatted = mikhmon_format_money_amount($incomeMonthTotal, $currency, $cekindo);
-
-    $_SESSION[$session.'idhr'] = $currentDayKey;
-    $_SESSION[$session.'totalHr'] = $incomeTodayCount;
-    $_SESSION[$session.'totalBl'] = $incomeMonthCount;
-    $_SESSION[$session.'dincome'] = $incomeTodayFormatted;
-    $_SESSION[$session.'mincome'] = $incomeMonthFormatted;
-
-    $revenueForecast = mikhmon_revenue_forecast($API, $clockDayKey, 7, $reportMonthlySales);
-  }
+  $reportMonthlySales = is_array($reportMonthlySales) ? $reportMonthlySales : array();
 /*
 // get selling report
     $thisD = date("d");

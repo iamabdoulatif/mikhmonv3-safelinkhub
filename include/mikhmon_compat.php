@@ -288,7 +288,7 @@ if (!function_exists('mikhmon_month_map')) {
       return '';
     }
 
-    return $matches[3] . '-' . $months[$month] . '-' . $matches[2];
+    return sprintf('%04d-%02d-%02d', (int) $matches[3], (int) $months[$month], (int) $matches[2]);
   }
 
   function mikhmon_safe_timezone($timezone, $fallback = 'UTC')
@@ -885,17 +885,28 @@ if (!function_exists('mikhmon_month_map')) {
 
   function mikhmon_fetch_mikhmon_sale_scripts($API)
   {
+    $originalTimeout = null;
+    if (is_object($API) && isset($API->timeout)) {
+      $originalTimeout = $API->timeout;
+      if ((int) $API->timeout < 90) {
+        $API->timeout = 90;
+      }
+    }
+
+    $rows = array();
     $data = $API->comm('/system/script/print', array('?comment' => 'mikhmon'));
     if (is_array($data) && !empty($data)) {
-      return mikhmon_unique_sale_scripts($data);
+      $rows = $data;
     }
 
     $data = $API->comm('/system/script/print', array('.proplist' => 'name,source,owner,comment'));
     if (!is_array($data)) {
-      return array();
+      if ($originalTimeout !== null) {
+        $API->timeout = $originalTimeout;
+      }
+      return mikhmon_unique_sale_scripts($rows);
     }
 
-    $rows = array();
     foreach ($data as $row) {
       if (!is_array($row)) {
         continue;
@@ -906,6 +917,10 @@ if (!function_exists('mikhmon_month_map')) {
       if ($comment === 'mikhmon' || ($comment === '' && strpos($name, '-|-') !== false && $sale['date'] !== '')) {
         $rows[] = $row;
       }
+    }
+
+    if ($originalTimeout !== null) {
+      $API->timeout = $originalTimeout;
     }
 
     return mikhmon_unique_sale_scripts($rows);
@@ -968,6 +983,131 @@ if (!function_exists('mikhmon_month_map')) {
     }
 
     return mikhmon_sales_through_day($rows, $throughDayKey);
+  }
+
+  function mikhmon_fetch_sales_by_month_index($API, $monthKey, $throughDayKey = '', $includeLegacyOwners = true)
+  {
+    $monthKey = strtolower(trim((string) $monthKey));
+    if ($monthKey === '') {
+      return array();
+    }
+
+    $rows = array();
+    $owners = array($monthKey);
+    foreach ($owners as $owner) {
+      $data = $API->comm('/system/script/print', array(
+        '?owner' => $owner,
+        '.proplist' => 'name,source,owner,comment',
+      ));
+      if (is_array($data) && !empty($data)) {
+        $rows = array_merge($rows, $data);
+      }
+    }
+
+    if ($includeLegacyOwners && empty($rows)) {
+      foreach (mikhmon_legacy_ros7_owner_keys($monthKey) as $owner) {
+        $data = $API->comm('/system/script/print', array(
+          '?owner' => $owner,
+          '.proplist' => 'name,source,owner,comment',
+        ));
+        if (is_array($data) && !empty($data)) {
+          $rows = array_merge($rows, $data);
+        }
+      }
+    }
+
+    if (empty($rows)) {
+      return array();
+    }
+
+    $rows = mikhmon_filter_sale_scripts(mikhmon_unique_sale_scripts($rows), '', $monthKey);
+    return mikhmon_sales_through_day($rows, $throughDayKey);
+  }
+
+  function mikhmon_dashboard_sales_for_month($API, $monthKey, $throughDayKey = '', $iphost = '', $userhost = '', $passwdhost = '')
+  {
+    $monthKey = strtolower(trim((string) $monthKey));
+    if ($monthKey === '') {
+      return array();
+    }
+
+    $rows = mikhmon_fetch_sales_by_month_index($API, $monthKey, $throughDayKey, false);
+    if (!empty($rows)) {
+      return $rows;
+    }
+
+    if (method_exists($API, 'disconnect') && method_exists($API, 'connect')
+        && trim((string) $iphost) !== '' && function_exists('decrypt')) {
+      $API->disconnect();
+      if ($API->connect($iphost, $userhost, decrypt($passwdhost))) {
+        $rows = mikhmon_fetch_sales_by_month_index($API, $monthKey, $throughDayKey, false);
+        if (!empty($rows)) {
+          return $rows;
+        }
+      }
+    }
+
+    return array();
+  }
+
+  function mikhmon_latest_sale_month_key($sales)
+  {
+    $latestMonth = '';
+    $latestIso = '';
+
+    foreach (mikhmon_unique_sale_scripts($sales) as $script) {
+      $sale = (isset($script['date']) && isset($script['month_key']))
+        ? $script
+        : mikhmon_parse_sale_script($script);
+      $monthKey = isset($sale['month_key']) ? strtolower(trim((string) $sale['month_key'])) : '';
+      if ($monthKey === '') {
+        continue;
+      }
+
+      $saleIso = mikhmon_iso_date_from_day_key(isset($sale['date']) ? $sale['date'] : '');
+      if ($saleIso === '') {
+        $saleIso = '0000-00-00';
+      }
+      if ($latestMonth === '' || $saleIso >= $latestIso) {
+        $latestMonth = $monthKey;
+        $latestIso = $saleIso;
+      }
+    }
+
+    return $latestMonth;
+  }
+
+  function mikhmon_report_sales_for_month($API, $monthKey, $throughDayKey = '')
+  {
+    $monthKey = strtolower(trim((string) $monthKey));
+    $allSales = mikhmon_fetch_mikhmon_sale_scripts($API);
+    $rows = array();
+
+    if ($monthKey !== '') {
+      $rows = mikhmon_filter_sale_scripts($allSales, '', $monthKey);
+    }
+
+    if ($monthKey === '' || empty($rows)) {
+      $latestMonth = mikhmon_latest_sale_month_key($allSales);
+      if ($latestMonth !== '' && $latestMonth !== $monthKey) {
+        $monthKey = $latestMonth;
+        $rows = mikhmon_filter_sale_scripts($allSales, '', $monthKey);
+        $throughDayKey = '';
+      }
+    }
+
+    if (!empty($rows)) {
+      return array(
+        'month_key' => $monthKey,
+        'rows' => mikhmon_sales_through_day($rows, $throughDayKey),
+      );
+    }
+
+    $fallbackRows = mikhmon_fetch_sales_by_month($API, $monthKey, $throughDayKey);
+    return array(
+      'month_key' => $monthKey,
+      'rows' => $fallbackRows,
+    );
   }
 
   function mikhmon_income_summary_from_scripts($scripts, $dayKey, $monthKey)
@@ -1278,8 +1418,10 @@ if (!function_exists('mikhmon_month_map')) {
           $counterSummary['today_count'] = $fallbackSummary['today_count'];
           $counterSummary['today_total'] = $fallbackSummary['today_total'];
         }
-        if ((int) $counterSummary['month_count'] === 0 && (float) $counterSummary['month_total'] == 0.0
-            && mikhmon_income_summary_has_values($fallbackSummary)) {
+        if (mikhmon_income_summary_has_values($fallbackSummary)
+            && ((int) $counterSummary['month_count'] === 0
+              || (float) $counterSummary['month_total'] == 0.0
+              || (float) $fallbackSummary['month_total'] > (float) $counterSummary['month_total'])) {
           $counterSummary['month_count'] = $fallbackSummary['month_count'];
           $counterSummary['month_total'] = $fallbackSummary['month_total'];
         }
@@ -1571,8 +1713,8 @@ if (!function_exists('mikhmon_month_map')) {
     $shouldRecordSale = mikhmon_parse_money_amount($price) > 0;
     $onlogin = ':put (",' . $expmode . ',' . $price . ',' . $validity . ',' . $sprice . ',,' . $lockStatus . ',"); '
       . '{:local comment [ /ip hotspot user get [/ip hotspot user find where name="$user"] comment]; '
-      . ':local ucode [:pick $comment 0 2]; '
-      . ':if ($ucode = "vc" or $ucode = "up" or $comment = "") do={ '
+      . ':local en ("mikhmon-expire-" . $user); '
+      . ':if ([:len [/sys sch find where name=$en and comment="mikhmon-user-expire"]] = 0) do={ '
       . mikhmon_ros_date_compat_block()
       . '/sys sch remove [find where name="$user" and comment="mikhmon-temp-expire"]; '
       . '/sys sch add name="$user" disabled=no start-date=$dateKey interval="' . $validity . '" comment="mikhmon-temp-expire"; '
@@ -1615,7 +1757,8 @@ if (!function_exists('mikhmon_month_map')) {
       $onLogin = isset($profile['on-login']) ? (string) $profile['on-login'] : '';
       if ($profileId === '' || !preg_match('/^[A-Za-z0-9_.-]+$/', $profileName)
           || (strpos($onLogin, 'mikhmon-user-expire') !== false
-            && strpos($onLogin, ':if ([:pick $clockDate 4 5] = "-")') !== false)) {
+            && strpos($onLogin, ':if ([:pick $clockDate 4 5] = "-")') !== false
+            && strpos($onLogin, '[/sys sch find where name=$en and comment="mikhmon-user-expire"]') !== false)) {
         continue;
       }
 

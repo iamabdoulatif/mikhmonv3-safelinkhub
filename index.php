@@ -117,15 +117,14 @@ if (!isset($_SESSION["mikhmon"]) && !$manager_index_logged_in) {
 // routeros api
   include_once('./lib/routeros_api.class.php');
   include_once('./lib/formatbytesbites.php');
+  include_once('./include/mikhmon_compat.php');
   $API = new RouterosAPI();
   $API->debug = false;
-  $API->timeout = 30;
-  $API->attempts = 1;
-  $API->delay = 0;
-  $API->connect($iphost, $userhost, decrypt($passwdhost));
+  mikhmon_configure_routeros_api($API);
+  $mikhmon_router_connected = $API->connect($iphost, $userhost, decrypt($passwdhost));
 
-  $getidentity = $API->comm("/system/identity/print");
-  $identity = $getidentity[0]['name'];
+  $getidentity = $mikhmon_router_connected ? $API->comm("/system/identity/print") : array();
+  $identity = $getidentity[0]['name'] ?? $hotspotname;
   
 
 // get variable

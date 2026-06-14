@@ -36,9 +36,34 @@ if (!isset($_SESSION["mikhmon"])) {
 	$_SESSION['idbl'] = $idbl;
 	$remdata = ($_POST['remdata']);
 	$prefix = $_GET['prefix'];
+	$getData = array();
+	$TotalReg = 0;
+
+	mikhmon_configure_routeros_api($API);
+	$mikhmonReportConnected = !empty($API->connected);
+	$mikhmonReportConnectionAttempted = isset($mikhmon_router_connected) ? true : $mikhmonReportConnected;
+	$mikhmonEnsureReportConnection = function () use (&$API, &$mikhmonReportConnected, &$mikhmonReportConnectionAttempted, $iphost, $userhost, $passwdhost) {
+		if ($mikhmonReportConnected || !empty($API->connected)) {
+			$mikhmonReportConnected = true;
+			$mikhmonReportConnectionAttempted = true;
+			return true;
+		}
+
+		if ($mikhmonReportConnectionAttempted) {
+			return false;
+		}
+
+		$mikhmonReportConnectionAttempted = true;
+		if ($API->connect($iphost, $userhost, decrypt($passwdhost))) {
+			$mikhmonReportConnected = true;
+			return true;
+		}
+
+		return false;
+	};
 	
 
-		$gettimezone = $API->comm("/system/clock/print");
+		$gettimezone = $mikhmonEnsureReportConnection() ? $API->comm("/system/clock/print") : array();
 		$timezone = mikhmon_safe_timezone($gettimezone[0]['time-zone-name'] ?? ($_SESSION['timezone'] ?? 'UTC'));
 		$_SESSION['timezone'] = $timezone;
 	date_default_timezone_set($timezone);
@@ -46,7 +71,7 @@ if (!isset($_SESSION["mikhmon"])) {
 
 	if (isset($remdata)) {
 		if (strlen($idhr) > "0") {
-			if ($API->connect($iphost, $userhost, decrypt($passwdhost))) {
+			if ($mikhmonEnsureReportConnection()) {
 				$API->write('/system/script/print', false);
 				$API->write('?source=' . $idhr . '', false);
 				$API->write('=.proplist=.id');
@@ -59,7 +84,7 @@ if (!isset($_SESSION["mikhmon"])) {
 				}
 			}
 		} elseif (strlen($idbl) > "0") {
-			if ($API->connect($iphost, $userhost, decrypt($passwdhost))) {
+			if ($mikhmonEnsureReportConnection()) {
 				$API->write('/system/script/print', false);
 				$API->write('?owner=' . $idbl . '', false);
 				$API->write('=.proplist=.id');
@@ -82,7 +107,7 @@ if (!isset($_SESSION["mikhmon"])) {
 		$fprefix = "";
 	}
 	if (strlen($idhr) > "0") {
-		if ($API->connect($iphost, $userhost, decrypt($passwdhost))) {
+		if ($mikhmonEnsureReportConnection()) {
 			$getData = mikhmon_fetch_sales_by_day($API, $idhr);
 			$TotalReg = count($getData);
 		}
@@ -90,16 +115,28 @@ if (!isset($_SESSION["mikhmon"])) {
 		$shf = "hidden";
 		$shd = "inline-block";
 	} elseif (strlen($idbl) > "0") {
-		if ($API->connect($iphost, $userhost, decrypt($passwdhost))) {
+		if ($mikhmonEnsureReportConnection()) {
 			$monthCutoff = (mikhmon_sale_month_key($reportClockDayKey) === strtolower($idbl)) ? $reportClockDayKey : '';
-			$getData = mikhmon_fetch_sales_by_month($API, $idbl, $monthCutoff);
+			$getData = mikhmon_fetch_sales_by_month_index($API, $idbl, $monthCutoff, false);
+			if (empty($getData)) {
+				if (empty($API->connected)) {
+					$mikhmonReportConnected = false;
+					$mikhmonReportConnectionAttempted = false;
+				}
+				if ($mikhmonEnsureReportConnection()) {
+					$getData = mikhmon_sales_from_used_hotspot_users($API, '', $idbl);
+					if (!empty($monthCutoff)) {
+						$getData = mikhmon_sales_through_day($getData, $monthCutoff);
+					}
+				}
+			}
 			$TotalReg = count($getData);
 		}
 		$filedownload = $idbl;
 		$shf = "hidden";
 		$shd = "inline-block";
 	} elseif ($idhr == "" || $idbl == "") {
-		if ($API->connect($iphost, $userhost, decrypt($passwdhost))) {
+		if ($mikhmonEnsureReportConnection()) {
 			$getData = $API->comm("/system/script/print", array(
 				"?comment" => "mikhmon",
 			));
@@ -109,9 +146,21 @@ if (!isset($_SESSION["mikhmon"])) {
 		$shf = "text";
 		$shd = "none";
 	} elseif (strlen($idbl) > "0" ) {
-		if ($API->connect($iphost, $userhost, decrypt($passwdhost))) {
+		if ($mikhmonEnsureReportConnection()) {
 			$monthCutoff = (mikhmon_sale_month_key($reportClockDayKey) === strtolower($idbl)) ? $reportClockDayKey : '';
-			$getData = mikhmon_fetch_sales_by_month($API, $idbl, $monthCutoff);
+			$getData = mikhmon_fetch_sales_by_month_index($API, $idbl, $monthCutoff, false);
+			if (empty($getData)) {
+				if (empty($API->connected)) {
+					$mikhmonReportConnected = false;
+					$mikhmonReportConnectionAttempted = false;
+				}
+				if ($mikhmonEnsureReportConnection()) {
+					$getData = mikhmon_sales_from_used_hotspot_users($API, '', $idbl);
+					if (!empty($monthCutoff)) {
+						$getData = mikhmon_sales_through_day($getData, $monthCutoff);
+					}
+				}
+			}
 			$TotalReg = count($getData);
 		}
 		$filedownload = $idbl;

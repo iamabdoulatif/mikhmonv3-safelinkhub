@@ -39,6 +39,8 @@ if (!isset($_SESSION["mikhmon"])) {
   include_once('../include/mikhmon_compat.php');
   $API = new RouterosAPI();
   $API->debug = false;
+  mikhmon_configure_routeros_api($API);
+  $API->connect($iphost, $userhost, decrypt($passwdhost));
 
 	$idhr = $_GET['idhr'];
 	$idbl = $_GET['idbl'];
@@ -118,7 +120,9 @@ if (!isset($_SESSION["mikhmon"])) {
 	} elseif (strlen($idbl) > "0") {
 		if ($API->connect($iphost, $userhost, decrypt($passwdhost))) {
 			$monthCutoff = (mikhmon_sale_month_key($reportClockDayKey) === strtolower($idbl)) ? $reportClockDayKey : '';
-			$getData = mikhmon_fetch_sales_by_month($API, $idbl, $monthCutoff);
+			$reportSales = mikhmon_report_sales_for_month($API, $idbl, $monthCutoff);
+			$idbl = $reportSales['month_key'];
+			$getData = $reportSales['rows'];
 			$TotalReg = count($getData);
 		}
 		$filedownload = $idbl;
@@ -137,7 +141,9 @@ if (!isset($_SESSION["mikhmon"])) {
 	} elseif (strlen($idbl) > "0" ) {
 		if ($API->connect($iphost, $userhost, decrypt($passwdhost))) {
 			$monthCutoff = (mikhmon_sale_month_key($reportClockDayKey) === strtolower($idbl)) ? $reportClockDayKey : '';
-			$getData = mikhmon_fetch_sales_by_month($API, $idbl, $monthCutoff);
+			$reportSales = mikhmon_report_sales_for_month($API, $idbl, $monthCutoff);
+			$idbl = $reportSales['month_key'];
+			$getData = $reportSales['rows'];
 			$TotalReg = count($getData);
 		}
 		$filedownload = $idbl;
